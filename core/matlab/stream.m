@@ -1,6 +1,6 @@
-function stream(p, path)
+function stream(p, x)
 
-    q = Process(p, path);
+    q = Process(p, x);
     jp = NIC_properties(p);
     s = NIC_streamer(jp);
     s.start();

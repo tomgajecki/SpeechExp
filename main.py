@@ -392,13 +392,13 @@ def main():
     
     # Start loading MATLAB engine
     loader = MatlabEngineLoader()
-    loader.engine_ready.connect(lambda engine: onEngineLoaded(engine, app, splash))
+    loader.engine_ready.connect(lambda engine: onEngineLoaded(engine, splash))
     loader.error_occurred.connect(lambda msg: onEngineError(msg, app, splash))
     loader.start()
     
     sys.exit(app.exec_())
 
-def onEngineLoaded(engine, app, splash):
+def onEngineLoaded(engine, splash):
     """Handle MATLAB engine loaded."""
     global mainWindow
     mainWindow = MainWindow(engine)
