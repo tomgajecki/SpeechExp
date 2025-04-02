@@ -31,7 +31,6 @@ loss: 'MSE'              # Loss function used during training.
 # DeepACE Model Configuration
 # ===================================================
 DeepACE:
-  num_sources: 1         # Number of audio sources to separate
   N: 64                  # Number of encoder filters (defines feature dimension)
   L: 32                  # Length of the convolutional encoder filters
   P: 128                 # Number of channels in the bottleneck layer

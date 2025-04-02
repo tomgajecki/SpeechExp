@@ -25,7 +25,6 @@ delta: 1.0                # Huber delta for Huber-based losses
 
 # DeepACE Model configuration parameters
 DeepACE:
-  num_sources: 1           # Number of audio sources to separate
   N: 64                  # Number of encoder filters (feature dimension)
   L: 32                    # Length of the convolutional encoder filters
   P: 128                     # Number of channels in the bottleneck layer

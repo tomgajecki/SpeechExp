@@ -266,10 +266,23 @@ class MainWindow(BaseWindow):
         test_type = self.testCombo.currentText()
         map_number = self.mapNumberEdit.text()
         map_side = self.sideCombo.currentText()
-        # Load map if not already loaded
-        if not hasattr(self, 'map_data') or self.map_data is None:
-            self.loadMap()
-        
+
+        # Check if map data is loaded; if not, show a styled warning and do not proceed
+        if self.map_data is None:
+            msg = QMessageBox(self)
+            msg.setIcon(QMessageBox.Warning)
+            msg.setWindowTitle("No Map Loaded")
+            msg.setText("No map is currently loaded.")
+            msg.setInformativeText("Please load a map in the main window before starting the experiment.")
+            msg.setStyleSheet("""
+                QMessageBox { background-color: #2c3e50; }
+                QMessageBox QLabel { color: white; font-size: 12px; padding: 10px; }
+                QPushButton { background-color: #3498db; color: white; border: none; padding: 5px 15px; border-radius: 3px; min-width: 80px; }
+                QPushButton:hover { background-color: #2980b9; }
+            """)
+            msg.exec_()
+            return
+
         # Create and show test window
         if test_type == "HSM":
             self.test_window = HSMTestWindow(self.eng, name, surname, id_val, self.map_data, map_number, map_side)
@@ -282,6 +295,8 @@ class MainWindow(BaseWindow):
         # Hide main window and show test window
         self.hide()
         self.test_window.show()
+
+
     
     def onTestWindowClosing(self):
         """Handle test window closing."""

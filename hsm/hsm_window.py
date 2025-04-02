@@ -1,11 +1,11 @@
 from PyQt5.QtWidgets import (
     QMainWindow, QLabel, QPushButton, QVBoxLayout, QWidget, QApplication,
-    QGroupBox, QHBoxLayout, QMessageBox, QGridLayout, QSlider, QProgressBar
+    QGroupBox, QHBoxLayout, QMessageBox, QGridLayout, QSlider, QProgressBar, QComboBox, QLineEdit
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QTimer
 import os
-import numpy as np
-from scipy.io import wavfile
+import torchaudio
+            
 
 class HSMTestWindow(QMainWindow):
     """HSM test window."""
@@ -22,8 +22,11 @@ class HSMTestWindow(QMainWindow):
         self.surname = surname
         self.id_val = id_val
         self.map_data = map_data
-        self.map_number = map_number or "Default"
+        self.map_number = map_number or "Not Loaded"
         self.map_side = map_side or "N/A"
+        
+        # Flag to track if a map is loaded
+        self.map_loaded = map_data is not None
         
         # Set up base folder
         self.base_folder = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'hsm')
@@ -39,6 +42,21 @@ class HSMTestWindow(QMainWindow):
         self.noise_folder = os.path.join(self.base_folder, 'audio', 'noise')
         if not os.path.exists(self.noise_folder):
             self.noise_folder = os.path.join(self.base_folder, "audio", "noise")
+        
+        # Set up models folder
+        self.models_folder = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'models')
+        if not os.path.exists(self.models_folder):
+            self.models_folder = os.path.join(os.getcwd(), "models")
+        
+        # Get available models
+        self.available_models = ["Unprocessed"]  # Default option
+        if os.path.exists(self.models_folder):
+            for item in os.listdir(self.models_folder):
+                if os.path.isdir(os.path.join(self.models_folder, item)):
+                    self.available_models.append(item)
+        
+        # Current processing algorithm
+        self.current_algorithm = "Unprocessed"
         
         # List configurations
         self.total_lists = 30
@@ -56,6 +74,10 @@ class HSMTestWindow(QMainWindow):
         
         self.initUI()
         self.stream_server_running = True
+        
+        # Show warning if no map is loaded
+        if not self.map_loaded:
+            QTimer.singleShot(500, self.showMapWarning)  # Show warning after window is fully loaded
         
     def initUI(self):
         self.setWindowTitle("HSM Test")
@@ -83,6 +105,7 @@ class HSMTestWindow(QMainWindow):
         subject_info.setMinimumHeight(30)
         self.layout.addWidget(subject_info)
         
+
         # Control panel container
         control_container = QWidget()
         control_container.setStyleSheet("""
@@ -145,6 +168,58 @@ class HSMTestWindow(QMainWindow):
         control_layout = QVBoxLayout(panel)
         control_layout.setSpacing(8)
         control_layout.setContentsMargins(10, 8, 10, 8)
+        
+        # Algorithm Selection
+        algo_group = QGroupBox("Processing Algorithm")
+        algo_group.setStyleSheet("""
+            QGroupBox { 
+                font-size: 12px; 
+                font-weight: bold; 
+                padding-top: 10px; 
+                margin-top: 6px; 
+            }
+        """)
+        algo_layout = QVBoxLayout(algo_group)
+        algo_layout.setContentsMargins(6, 10, 6, 6)
+        algo_layout.setSpacing(6)
+        
+        self.algo_combo = QComboBox()
+        self.algo_combo.addItems(self.available_models)
+        self.algo_combo.setCurrentText("Unprocessed")
+        self.algo_combo.setStyleSheet("""
+            QComboBox {
+                background-color: #2c3e50;
+                color: white;
+                border: 1px solid #34495e;
+                border-radius: 3px;
+                padding: 5px;
+                min-height: 24px;
+                font-size: 12px;
+            }
+            QComboBox::drop-down {
+                border: none;
+                width: 20px;
+            }
+            QComboBox::down-arrow {
+                image: url(down_arrow.png);
+                width: 12px;
+                height: 12px;
+            }
+            QComboBox:hover {
+                border: 1px solid #3498db;
+            }
+            QComboBox QAbstractItemView {
+                background-color: #2c3e50;
+                color: white;
+                selection-background-color: #3498db;
+                selection-color: white;
+                border: 1px solid #34495e;
+            }
+        """)
+        self.algo_combo.currentTextChanged.connect(self.onAlgorithmChanged)
+        
+        algo_layout.addWidget(self.algo_combo)
+        control_layout.addWidget(algo_group)
         
         # Selection Panel group
         selection_group = QGroupBox("Selection Panel")
@@ -452,8 +527,13 @@ class HSMTestWindow(QMainWindow):
                 font-size: 12px;
             }
             QPushButton:hover { background-color: #27ae60; }
+            QPushButton:disabled {
+                background-color: #95a5a6;
+                color: #7f8c8d;
+            }
         """)
         self.play_btn.setFixedHeight(30)
+        self.play_btn.setEnabled(self.map_loaded)  # Disable if no map is loaded
         
         self.play_next_btn = QPushButton("Play Next")
         self.play_next_btn.setStyleSheet("""
@@ -467,8 +547,13 @@ class HSMTestWindow(QMainWindow):
                 font-size: 12px;
             }
             QPushButton:hover { background-color: #2980b9; }
+            QPushButton:disabled {
+                background-color: #95a5a6;
+                color: #7f8c8d;
+            }
         """)
         self.play_next_btn.setFixedHeight(30)
+        self.play_next_btn.setEnabled(self.map_loaded)  # Disable if no map is loaded
         
         # Playing indicator
         self.playing_label = QLabel("")
@@ -550,8 +635,8 @@ class HSMTestWindow(QMainWindow):
 
     def enablePlaybackControls(self):
         """Enable all playback-related controls."""
-        self.play_btn.setEnabled(True)
-        self.play_next_btn.setEnabled(True)
+        self.play_btn.setEnabled(self.map_loaded)
+        self.play_next_btn.setEnabled(self.map_loaded)
         self.icra7_btn.setEnabled(True)
         self.ccitt_btn.setEnabled(True)
         self.clean_btn.setEnabled(True)
@@ -563,6 +648,22 @@ class HSMTestWindow(QMainWindow):
         """Play the current sentence with or without noise."""
         # Prevent multiple playbacks
         if self.is_playing:
+            return
+            
+        # Check if a map is loaded
+        if not self.map_loaded:
+            msg = QMessageBox()
+            msg.setIcon(QMessageBox.Warning)
+            msg.setWindowTitle("No Map Loaded")
+            msg.setText("No map is currently loaded.")
+            msg.setInformativeText("Please load a map in the main window before playing audio.")
+            msg.setStyleSheet("""
+                QMessageBox { background-color: #2c3e50; }
+                QMessageBox QLabel { color: white; font-size: 12px; padding: 10px; }
+                QPushButton { background-color: #3498db; color: white; border: none; padding: 5px 15px; border-radius: 3px; min-width: 80px; }
+                QPushButton:hover { background-color: #2980b9; }
+            """)
+            msg.exec_()
             return
             
         # Disable all playback controls during playback
@@ -620,20 +721,16 @@ class HSMTestWindow(QMainWindow):
             speech_file = audio_files[0]
             speech_path = os.path.join(self.speech_folder, speech_file)
             
-            # Load the speech data using scipy
-            fs_speech, speech_data = wavfile.read(speech_path)
             
-            # Convert data to float64 and normalize to [-1, 1] range
-            if speech_data.dtype == np.int16:
-                speech_data = speech_data.astype(np.float64) / 32768.0
-            elif speech_data.dtype == np.int32:
-                speech_data = speech_data.astype(np.float64) / 2147483648.0
-            elif speech_data.dtype == np.uint8:
-                speech_data = (speech_data.astype(np.float64) - 128) / 128.0
-                
+            # Load the speech data using torchaudio
+            speech_tensor, fs_speech = torchaudio.load(speech_path)
+            
+            # Convert to numpy array
+            speech_data = speech_tensor.numpy()
+            
             # Check for stereo files and convert to mono if needed
-            if len(speech_data.shape) > 1 and speech_data.shape[1] > 1:
-                speech_data = speech_data[:, 0]  # Take first channel
+            if len(speech_data.shape) > 1 and speech_data.shape[0] > 1:
+                speech_data = speech_data[0, :]  # Take first channel
                 
             # Convert to MATLAB-compatible numeric array
             import matlab
@@ -674,20 +771,15 @@ class HSMTestWindow(QMainWindow):
                     msg.exec_()
                     return
                 
-                # Load noise data
-                fs_noise, noise_data = wavfile.read(noise_path)
+                # Load noise data using torchaudio
+                noise_tensor, fs_noise = torchaudio.load(noise_path)
                 
-                # Convert noise data to float64 and normalize
-                if noise_data.dtype == np.int16:
-                    noise_data = noise_data.astype(np.float64) / 32768.0
-                elif noise_data.dtype == np.int32:
-                    noise_data = noise_data.astype(np.float64) / 2147483648.0
-                elif noise_data.dtype == np.uint8:
-                    noise_data = (noise_data.astype(np.float64) - 128) / 128.0
-                    
+                # Convert to numpy array
+                noise_data = noise_tensor.numpy()
+                
                 # Check for stereo noise and convert to mono if needed
-                if len(noise_data.shape) > 1 and noise_data.shape[1] > 1:
-                    noise_data = noise_data[:, 0]  # Take first channel
+                if len(noise_data.shape) > 1 and noise_data.shape[0] > 1:
+                    noise_data = noise_data[0, :]  # Take first channel
                     
                 # Check if sampling rates match
                 if fs_speech != fs_noise:
@@ -702,15 +794,29 @@ class HSMTestWindow(QMainWindow):
                 # Use MATLAB engine to mix audio at the specified SNR
                 mixed_audio = self.eng.mix_audio(speech_data_matlab, noise_data_matlab, float(snr), float(fs_speech), nargout=1)
                 
-                # Stream the mixed audio
-                self.eng.stream(self.map_data, mixed_audio, nargout=0)
-                
-                self.setStatusText(f"Playing sentence {sentence_num} from list {list_num} with {self.noise_type.upper()} noise at {snr} dB SNR")
+                # Process the mixed audio based on the selected algorithm
+                if self.current_algorithm != "Unprocessed":
+                    # Process the audio using the selected algorithm
+                    processed_signal = self.processAudio(mixed_audio, self.current_algorithm)
+                    # Stream the processed audio
+                    self.eng.stream(self.map_data, processed_signal, nargout=0)
+                    self.setStatusText(f"Playing processed sentence {sentence_num} from list {list_num} with {self.noise_type.upper()} noise at {snr} dB SNR using {self.current_algorithm}")
+                else:
+                    # Stream the unprocessed mixed audio
+                    self.eng.stream(self.map_data, mixed_audio, nargout=0)
+                    self.setStatusText(f"Playing sentence {sentence_num} from list {list_num} with {self.noise_type.upper()} noise at {snr} dB SNR")
             else:
-                # Stream clean speech without noise
-                self.eng.stream(self.map_data, speech_data_matlab, nargout=0)
-                
-                self.setStatusText(f"Playing clean sentence {sentence_num} from list {list_num}")
+                # Process clean speech based on the selected algorithm
+                if self.current_algorithm != "Unprocessed":
+                    # Process the clean speech using the selected algorithm
+                    processed_audio = self.processAudio(speech_data_matlab, self.current_algorithm)
+                    # Stream the processed clean speech
+                    self.eng.stream(self.map_data, processed_audio, nargout=0)
+                    self.setStatusText(f"Playing processed clean sentence {sentence_num} from list {list_num} using {self.current_algorithm}")
+                else:
+                    # Stream clean speech without processing
+                    self.eng.stream(self.map_data, speech_data_matlab, nargout=0)
+                    self.setStatusText(f"Playing clean sentence {sentence_num} from list {list_num}")
                 
         except Exception as e:
             msg = QMessageBox()
@@ -733,7 +839,88 @@ class HSMTestWindow(QMainWindow):
             self.is_playing = False
             self.enablePlaybackControls()
             self.playing_label.setText("")  # Clear playing indicator
-    
+            
+    def processAudio(self, audio_data, algorithm):
+        """Process audio data using the selected algorithm."""
+        if algorithm == "Unprocessed":
+            return audio_data
+            
+        # Get the model path and config path for the selected algorithm
+        model_dir = os.path.join(self.models_folder, algorithm)
+        
+        # Check if the model directory exists
+        if not os.path.exists(model_dir):
+            print(f"Model directory not found: {model_dir}")
+            return audio_data
+            
+        try:
+            # Import the run_inference function from single_inference.py
+            from single_inference import run_inference
+            
+            # Convert audio_data to numpy array if it's a MATLAB array
+            if hasattr(audio_data, 'dtype') and hasattr(audio_data, 'shape'):
+                # It's already a numpy array
+                numpy_audio = audio_data
+            else:
+                # Convert MATLAB array to numpy array
+                import numpy as np
+                numpy_audio = np.array(audio_data)
+            
+            # Force garbage collection to clear any previous models
+            import gc
+            import torch
+            gc.collect()
+            torch.cuda.empty_cache()  # Clear GPU memory if using CUDA
+            
+            print(f"Processing audio with algorithm: {algorithm}")
+            print(f"Model directory: {model_dir}")
+            
+            # Check if the model directory contains the necessary files
+            if not os.path.exists(os.path.join(model_dir, "checkpoint")):
+                print(f"Checkpoint directory not found in {model_dir}")
+                return audio_data
+                
+            # Check for .pth files in the checkpoint directory
+            checkpoint_dir = os.path.join(model_dir, "checkpoint")
+            pth_files = [f for f in os.listdir(checkpoint_dir) if f.endswith('.pth')]
+            if not pth_files:
+                print(f"No .pth files found in {checkpoint_dir}")
+                return audio_data
+                
+            print(f"Found model files: {pth_files}")
+            
+            # Check for modules directory
+            modules_dir = os.path.join(model_dir, "modules")
+            if not os.path.exists(modules_dir):
+                print(f"Modules directory not found in {model_dir}")
+                return audio_data
+                
+            # Check for model.py in modules directory
+            if not os.path.exists(os.path.join(modules_dir, "model.py")):
+                print(f"model.py not found in {modules_dir}")
+                return audio_data
+            
+            # Run inference using the model directory
+            processed_audio = run_inference(
+                waveform=numpy_audio,
+                model_dir=model_dir,
+                model_type=algorithm
+            )
+            
+            print(f"Audio processing completed successfully")
+            
+            # Convert back to MATLAB array if needed
+            import matlab
+            processed_audio_matlab = matlab.double(processed_audio.tolist())
+            
+            return processed_audio_matlab
+            
+        except Exception as e:
+            print(f"Error processing audio with {algorithm}: {e}")
+            import traceback
+            traceback.print_exc()
+            return audio_data
+
     def goBack(self):
         self.hide()
         for widget in QApplication.topLevelWidgets():
@@ -792,3 +979,24 @@ class HSMTestWindow(QMainWindow):
         
         # Then play the audio
         self.playCurrentSentence(with_noise=(self.noise_type != "clean"))
+
+    def onAlgorithmChanged(self, algorithm):
+        """Handle algorithm selection change."""
+        self.current_algorithm = algorithm
+        print(f"Selected algorithm: {algorithm}")  # For debugging
+        # We'll add the processing logic later
+
+    def showMapWarning(self):
+        """Show a warning message about loading a map."""
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Warning)
+        msg.setWindowTitle("No Map Loaded")
+        msg.setText("No map is currently loaded.")
+        msg.setInformativeText("Please load a map in the main window before starting the experiment.")
+        msg.setStyleSheet("""
+            QMessageBox { background-color: #2c3e50; }
+            QMessageBox QLabel { color: white; font-size: 12px; padding: 10px; }
+            QPushButton { background-color: #3498db; color: white; border: none; padding: 5px 15px; border-radius: 3px; min-width: 80px; }
+            QPushButton:hover { background-color: #2980b9; }
+        """)
+        msg.exec_()
