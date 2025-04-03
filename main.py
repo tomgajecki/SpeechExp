@@ -2,7 +2,7 @@ import sys
 import os
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QLineEdit, QLabel, 
                             QPushButton, QComboBox, QGridLayout, QVBoxLayout, QSpacerItem, 
-                            QSizePolicy, QMessageBox, QSplashScreen, QFileDialog, QProgressBar)
+                            QSizePolicy, QMessageBox, QSplashScreen, QFileDialog, QProgressBar, QHBoxLayout)
 from PyQt5.QtGui import QFont, QPixmap, QMovie, QColor
 from PyQt5.QtCore import Qt, QTimer, QSize, QPropertyAnimation, QRect, QEasingCurve
 
@@ -11,6 +11,11 @@ from core.base_window import BaseWindow
 from hsm.hsm_window import HSMTestWindow
 from olsa.olsa_window import OLSATestWindow
 
+class CustomSplashScreen(QSplashScreen):
+    def mousePressEvent(self, event):
+        # Ignore mouse press events to prevent the splash from closing
+        event.ignore()
+
 class MainWindow(BaseWindow):
     """Main window for the Speech Intelligibility Experiment."""
     
@@ -18,11 +23,15 @@ class MainWindow(BaseWindow):
         super().__init__(None, "Speech Intelligibility Experiment")
         self.eng = engine
         self.map_data = None
+        self.original_upper_levels = None # Stores the original matlab.double object
+        self.original_upper_levels_numeric = None # Stores the original numeric list
+        self.calibrated_upper_levels_numeric = None # Stores the calibrated numeric list
+        self.calibration_percent = 80
         self.initUI()
         # Don't show the window immediately
         self.hide()
         self.setObjectName("mainWindow")  # Set object name for finding the window
-        self.setFixedSize(800, 600)
+        self.setFixedSize(1300, 750)  # Extra-wide window to ensure proper spacing
         self.center()
         
         # Apply styles
@@ -117,53 +126,153 @@ class MainWindow(BaseWindow):
         separator2.setStyleSheet("background-color: #5e5e5e;")
         self.layout.addWidget(separator2)
         
-        # Map Data Section
+        # Create a container for Map Data and Calibration together
+        mapAndCalibrationContainer = QHBoxLayout()
+        mapAndCalibrationContainer.setSpacing(15)  # Add spacing between map data and calibration
+        
+        # LEFT SIDE: Map Data Section
+        mapDataContainer = QVBoxLayout()
+        mapDataContainer.setContentsMargins(0, 0, 0, 0)  # No margins to maximize space
+        
         self.mapDataGroupLabel = QLabel("CI Map Data")
         self.mapDataGroupLabel.setFont(QFont("Arial", 16, QFont.Bold))
         self.mapDataGroupLabel.setStyleSheet("color: white;")
-        self.layout.addWidget(self.mapDataGroupLabel)
+        mapDataContainer.addWidget(self.mapDataGroupLabel)
         
         self.mapDataLayout = QGridLayout()
-        self.mapDataLayout.setVerticalSpacing(25)
-        self.mapDataLayout.setHorizontalSpacing(10)
+        self.mapDataLayout.setVerticalSpacing(15)  # Reduced vertical spacing
+        self.mapDataLayout.setHorizontalSpacing(20)  # Increase horizontal spacing between label and value
         
+        # Create parameter labels with fixed width and right alignment
         thresholdLabel = QLabel("Thresholds (T Levels):")
         thresholdLabel.setStyleSheet("color: white;")
-        self.lowerLevelsLabel = QLabel("Not loaded")
-        self.lowerLevelsLabel.setWordWrap(True)
-        self.lowerLevelsLabel.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        self.lowerLevelsLabel.setStyleSheet("background-color: #2a2a2a; padding: 8px; border-radius: 3px; color: white;")
+        thresholdLabel.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        thresholdLabel.setFixedWidth(220)  # Fixed width ensures consistent alignment
         
         comfortableLabel = QLabel("Comfortable Levels (C Levels):")
         comfortableLabel.setStyleSheet("color: white;")
+        comfortableLabel.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        comfortableLabel.setFixedWidth(220)  # Fixed width ensures consistent alignment
+        
+        self.lowerLevelsLabel = QLabel("Not loaded")
+        self.lowerLevelsLabel.setWordWrap(False)
+        self.lowerLevelsLabel.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.lowerLevelsLabel.setStyleSheet("background-color: #2a2a2a; padding: 6px 10px; border-radius: 3px; color: white;")
+        self.lowerLevelsLabel.setMinimumHeight(36)
+        self.lowerLevelsLabel.setMinimumWidth(600)
+        self.lowerLevelsLabel.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)  # Left align the values
+        
         self.upperLevelsLabel = QLabel("Not loaded")
-        self.upperLevelsLabel.setWordWrap(True)
+        self.upperLevelsLabel.setWordWrap(False)
         self.upperLevelsLabel.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        self.upperLevelsLabel.setStyleSheet("background-color: #2a2a2a; padding: 8px; border-radius: 3px; color: white;")
+        self.upperLevelsLabel.setStyleSheet("background-color: #2a2a2a; padding: 6px 10px; border-radius: 3px; color: white;")
+        self.upperLevelsLabel.setMinimumHeight(36)
+        self.upperLevelsLabel.setMinimumWidth(600)
+        self.upperLevelsLabel.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)  # Left align the values
         
         stimRateLabel = QLabel("Channel Stimulation Rate (Hz):")
         stimRateLabel.setStyleSheet("color: white;")
-        self.channelStimRateLabel = QLabel("Not loaded")
-        self.channelStimRateLabel.setWordWrap(True)
+        stimRateLabel.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        stimRateLabel.setFixedWidth(220)  # Fixed width ensures consistent alignment
+        
+        self.channelStimRateLabel = QLabel("Not loaded") 
+        self.channelStimRateLabel.setWordWrap(False)
         self.channelStimRateLabel.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        self.channelStimRateLabel.setStyleSheet("background-color: #2a2a2a; padding: 8px; border-radius: 3px; color: white;")
+        self.channelStimRateLabel.setStyleSheet("background-color: #2a2a2a; padding: 6px 10px; border-radius: 3px; color: white;")
+        self.channelStimRateLabel.setMinimumHeight(36)
+        self.channelStimRateLabel.setMinimumWidth(600)
+        self.channelStimRateLabel.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)  # Left align the values
         
-        self.mapDataLayout.addWidget(thresholdLabel, 0, 0, Qt.AlignTop)
-        self.mapDataLayout.addWidget(self.lowerLevelsLabel, 0, 1)
-        self.mapDataLayout.addWidget(comfortableLabel, 1, 0, Qt.AlignTop)
-        self.mapDataLayout.addWidget(self.upperLevelsLabel, 1, 1)
-        self.mapDataLayout.addWidget(stimRateLabel, 2, 0, Qt.AlignTop)
-        self.mapDataLayout.addWidget(self.channelStimRateLabel, 2, 1)
+        # Use full row for each parameter to give maximum width
+        self.mapDataLayout.addWidget(thresholdLabel, 0, 0, 1, 1, Qt.AlignVCenter)
+        self.mapDataLayout.addWidget(self.lowerLevelsLabel, 0, 1, 1, 3, Qt.AlignVCenter)
+        self.mapDataLayout.addWidget(comfortableLabel, 1, 0, 1, 1, Qt.AlignVCenter)
+        self.mapDataLayout.addWidget(self.upperLevelsLabel, 1, 1, 1, 3, Qt.AlignVCenter)
+        self.mapDataLayout.addWidget(stimRateLabel, 2, 0, 1, 1, Qt.AlignVCenter)
+        self.mapDataLayout.addWidget(self.channelStimRateLabel, 2, 1, 1, 3, Qt.AlignVCenter)
         
-        self.mapDataLayout.setColumnStretch(1, 1)
-        self.layout.addLayout(self.mapDataLayout)
+        mapDataContainer.addLayout(self.mapDataLayout)
         
-        # Hide map data section initially
+        # Add map data container to the left side
+        mapAndCalibrationContainer.addLayout(mapDataContainer, 4)  # Map:Calibration ratio 4:1
+        
+        # RIGHT SIDE: Calibration Section with simplified direct widgets
+        # Create a container widget with background for the calibration section - compact design
+        self.calibrationWidget = QWidget()
+        self.calibrationWidget.setStyleSheet("background-color: #333333; border: 2px solid #ff9900; border-radius: 8px; padding: 8px;")
+        self.calibrationWidget.setFixedWidth(240)  # Slightly wider to fit content
+        
+        self.calibrationContainer = QVBoxLayout(self.calibrationWidget)
+        self.calibrationContainer.setContentsMargins(8, 8, 8, 8)  # Minimal padding
+        self.calibrationContainer.setSpacing(8)  # Minimal spacing
+        
+        # Label for the calibration section
+        calibrationLabel = QLabel("Adjust Comfort Level:")
+        calibrationLabel.setAlignment(Qt.AlignCenter)
+        calibrationLabel.setStyleSheet("color: white; font-weight: bold;")
+        self.calibrationContainer.addWidget(calibrationLabel)
+        
+        # Create a simple horizontal layout for controls
+        controlsLayout = QHBoxLayout()
+        controlsLayout.setSpacing(8)  # Reduced spacing
+        controlsLayout.setContentsMargins(0, 0, 0, 0)  # No margins
+        
+        # Decrease button - more compact
+        self.decreaseButton = QPushButton("–")
+        self.decreaseButton.setFont(QFont("Arial", 16, QFont.Bold))
+        self.decreaseButton.setFixedSize(40, 40)  # Compact size
+        self.decreaseButton.setStyleSheet("background-color: #d35400; color: white;")
+        self.decreaseButton.clicked.connect(self.decreaseCalibration)
+        controlsLayout.addWidget(self.decreaseButton)
+        
+        # Percentage display - more compact
+        self.calibrationPercentLabel = QLabel("80%")
+        self.calibrationPercentLabel.setFont(QFont("Arial", 14, QFont.Bold))
+        self.calibrationPercentLabel.setAlignment(Qt.AlignCenter)
+        self.calibrationPercentLabel.setStyleSheet("color: #ffffff; background-color: #1e1e1e; padding: 6px; border-radius: 3px;")
+        self.calibrationPercentLabel.setFixedWidth(70)
+        controlsLayout.addWidget(self.calibrationPercentLabel)
+        
+        # Increase button - more compact
+        self.increaseButton = QPushButton("+")
+        self.increaseButton.setFont(QFont("Arial", 16, QFont.Bold))
+        self.increaseButton.setFixedSize(40, 40)  # Compact size
+        self.increaseButton.setStyleSheet("background-color: #27ae60; color: white;")
+        self.increaseButton.clicked.connect(self.increaseCalibration)
+        controlsLayout.addWidget(self.increaseButton)
+        
+        # Add controls layout to calibration container
+        self.calibrationContainer.addLayout(controlsLayout)
+        
+        # Play button - directly below with no spacing
+        self.playCalibrationButton = QPushButton("Play Test Sentence")
+        self.playCalibrationButton.setMinimumHeight(40)  # Compact height
+        self.playCalibrationButton.setStyleSheet("background-color: #ff9900; color: black; font-weight: bold; font-size: 13px;")
+        self.playCalibrationButton.clicked.connect(self.playCalibration)
+        self.calibrationContainer.addWidget(self.playCalibrationButton)
+        
+        # No stretch - compact layout with no empty space
+        
+        # Add the calibration container to the map and calibration container
+        calibrationOuterContainer = QVBoxLayout()
+        calibrationOuterContainer.setContentsMargins(30, 0, 0, 0)  # Increase left margin for better separation
+        calibrationOuterContainer.addWidget(self.calibrationWidget)
+        calibrationOuterContainer.addStretch(1)  # Keep the stretch here to push the widget to the top
+        
+        mapAndCalibrationContainer.addLayout(calibrationOuterContainer, 1)  # Map:Calibration ratio 3:1
+        
+        # Add the combined container to the main layout
+        self.layout.addLayout(mapAndCalibrationContainer)
+        
+        # Hide map data section and calibration initially
         self.mapDataGroupLabel.setVisible(False)
         for i in range(self.mapDataLayout.count()):
             item = self.mapDataLayout.itemAt(i)
             if item.widget():
                 item.widget().setVisible(False)
+        
+        # Hide calibration widget initially
+        self.calibrationWidget.setVisible(False)
         
         # Spacer
         self.layout.addSpacing(20)
@@ -192,6 +301,23 @@ class MainWindow(BaseWindow):
         self.startButton.setEnabled(True)
         self.loadMapButton.setEnabled(True)
         self.statusLabel.setText("MATLAB engine ready")
+    
+    def extract_values_from_matlab(self, matlab_array):
+        """Extract numeric values from a MATLAB array string representation."""
+        try:
+            raw_str = str(matlab_array)
+            # Remove brackets and split by spaces or commas
+            cleaned = raw_str.replace('[', '').replace(']', '')
+            values = []
+            for item in cleaned.replace(',', ' ').split():
+                try:
+                    values.append(float(item))
+                except ValueError:
+                    pass
+            return values
+        except Exception as e:
+            print(f"Error extracting values: {e}")
+            return []
     
     def loadMap(self):
         """Load CI map data from MATLAB."""
@@ -233,6 +359,18 @@ class MainWindow(BaseWindow):
                         pass
                 return ", ".join(values)
             
+            # Extract and store original upper levels when loading map
+            self.original_upper_levels = upper_levels
+            # Also store the numeric representation of original levels
+            self.original_upper_levels_numeric = self.extract_values_from_matlab(upper_levels)
+            # Initialize calibrated values with the original ones
+            self.calibrated_upper_levels_numeric = self.original_upper_levels_numeric[:]
+            
+            # Debug print
+            print(f"Original upper levels (matlab): {self.original_upper_levels}")
+            print(f"Original lower levels: {lower_levels}")
+            print(f"Channel stim rate: {channel_stim_rate}")
+            
             self.lowerLevelsLabel.setText(clean_matlab_array(lower_levels))
             self.upperLevelsLabel.setText(clean_matlab_array(upper_levels))
             self.channelStimRateLabel.setText(clean_matlab_array(channel_stim_rate))
@@ -243,13 +381,23 @@ class MainWindow(BaseWindow):
                 if item.widget():
                     item.widget().setVisible(True)
             
-            self.setFixedSize(1000, 800)
+            # Make sure window size is correct
+            self.setFixedSize(1300, 750)  # Match the width in __init__
             self.center()
             
             self.startButton.setText("Start Experiment (Map Loaded)")
             self.startButton.setStyleSheet("background-color: #28a745;")
             self.mapDataGroupLabel.setText("CI Map Data")
             self.mapDataGroupLabel.setStyleSheet("color: #28a745;")
+            
+            # Force UI update to ensure map data is visible
+            QApplication.processEvents()
+            
+            # Make sure the calibration controls are fully visible
+            self.showCalibrationControls()
+            
+            # Apply calibration - this will update the upperLevelsLabel with calibrated values
+            self.updateCalibration()
             
         except Exception as e:
             QMessageBox.critical(self, "MATLAB Error", str(e))
@@ -297,8 +445,6 @@ class MainWindow(BaseWindow):
         self.hide()
         self.test_window.show()
 
-
-    
     def onTestWindowClosing(self):
         """Handle test window closing."""
         print("onTestWindowClosing called")
@@ -347,7 +493,9 @@ class MainWindow(BaseWindow):
             }
             QLabel {
                 color: white;
+                /* font-size: 14px; Remove base font size */
             }
+            /* Remove QLabel[class="ParameterValueLabel"] style */
             QPushButton {
                 background-color: #4a90e2;
                 color: white;
@@ -383,6 +531,7 @@ class MainWindow(BaseWindow):
                 width: 12px;
                 height: 12px;
             }
+            /* Remove QLineEdit style */
             QProgressBar {
                 border: 1px solid #3d3d3d;
                 border-radius: 4px;
@@ -394,6 +543,102 @@ class MainWindow(BaseWindow):
             }
         """)
 
+    def hideCalibrationControls(self):
+        """Hide all calibration controls."""
+        print("Hiding calibration controls")
+        self.calibrationWidget.setVisible(False)
+        
+    def showCalibrationControls(self):
+        """Show all calibration controls."""
+        print("Showing calibration controls...")
+        self.calibrationWidget.setVisible(True)
+        # Force update
+        QApplication.processEvents()
+
+    def playCalibration(self):
+        """Play a test sentence using current calibration settings."""
+        print("Play calibration sentence button clicked")
+        if not hasattr(self, 'map_data') or self.map_data is None:
+            QMessageBox.warning(self, "Error", "No map data loaded. Please load a map first.")
+            return
+            
+        try:
+            QMessageBox.information(self, "Test Sentence", "Playing test sentence with current calibration settings.")
+            # The actual implementation of playing the test sentence would go here
+            # This would involve calling a MATLAB function
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error playing test sentence: {str(e)}")
+            
+    def increaseCalibration(self):
+        """Increase calibration percentage."""
+        print("Increase button clicked")
+        if not hasattr(self, 'calibration_percent'):
+            print("calibration_percent attribute not found")
+            return
+            
+        # Increase by 5% up to a maximum of 120%
+        self.calibration_percent = min(120, self.calibration_percent + 2)
+        print(f"Calibration increased to {self.calibration_percent}%")
+        self.updateCalibration()
+        
+    def decreaseCalibration(self):
+        """Decrease calibration percentage."""
+        print("Decrease button clicked")
+        if not hasattr(self, 'calibration_percent'):
+            print("calibration_percent attribute not found")
+            return
+            
+        # Decrease by 5% down to a minimum of 20%
+        self.calibration_percent = max(20, self.calibration_percent - 2)
+        print(f"Calibration decreased to {self.calibration_percent}%")
+        self.updateCalibration()
+
+    def updateCalibration(self):
+        """Update the calibrated levels based on the calibration percentage."""
+        print(f"Updating calibration to {self.calibration_percent}%")
+        # Use the stored numeric original levels for calculation
+        if not hasattr(self, 'original_upper_levels_numeric') or not self.original_upper_levels_numeric:
+            print("No original numeric upper levels data found for calibration")
+            return
+            
+        try:
+            # Update the percentage display
+            self.calibrationPercentLabel.setText(f"{self.calibration_percent}%")
+            
+            # Use the stored numeric original values
+            values = self.original_upper_levels_numeric
+            print(f"Using original numeric values for calculation: {values}")
+            
+            if not values:
+                print("No numeric values found in original_upper_levels_numeric")
+                return
+                
+            # Calculate calibrated values
+            calibrated_values = [val * (self.calibration_percent / 100.0) for val in values]
+            # Store the numeric calibrated values
+            self.calibrated_upper_levels_numeric = calibrated_values
+            print(f"Stored numeric calibrated values: {[round(val, 1) for val in self.calibrated_upper_levels_numeric]}")
+            
+            # Format for display only
+            formatted_values = [f"{val:.1f}" for val in self.calibrated_upper_levels_numeric]
+            display_text = ", ".join(formatted_values)
+            
+            # Update display label
+            self.upperLevelsLabel.setText(display_text)
+            print(f"Updated display with: {display_text}")
+            
+            # DO NOT UPDATE self.map_data['upper_levels'] with the string anymore
+            # Keep self.map_data['upper_levels'] as the original matlab object
+            # if hasattr(self, 'map_data') and self.map_data is not None:
+            #     calibrated_matlab_str = f"[{' '.join([f'{val:.6f}' for val in calibrated_values])}]"
+            #     self.map_data['upper_levels'] = calibrated_matlab_str 
+            #     print(f"Updated map_data upper_levels with calibrated values") # This line is removed
+                
+        except Exception as e:
+            print(f"Error in updateCalibration: {e}")
+            import traceback
+            traceback.print_exc()
+
 def main():
     """Main function to start the application."""
     app = QApplication(sys.argv)
@@ -402,7 +647,7 @@ def main():
     splash_pix = QPixmap(640, 480)
     pastel_blue = QColor("#A7C7E7") 
     splash_pix.fill(pastel_blue)
-    splash = QSplashScreen(splash_pix)
+    splash = CustomSplashScreen(splash_pix)
     splash.setWindowFlags(splash.windowFlags() | Qt.WindowStaysOnTopHint)
     
     # Center the text with larger font
