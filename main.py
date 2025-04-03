@@ -541,45 +541,42 @@ def main():
     sys.exit(app.exec_())
 
 def onEngineLoaded_animated(engine, splash):
-    """Handle MATLAB engine loaded with a fade-out animation for the splash screen."""
-
-
+    """Handle MATLAB engine loaded with concurrent fade-out for the splash and fade-in for the main window."""
     def start_transition():
-        # Create the main window (keep it hidden until the animation is done)
         global mainWindow
         try:
             mainWindow = MainWindow(engine)
         except Exception as e:
             onEngineError(f"Failed to create MainWindow: {e}", QApplication.instance(), splash)
             return
-        
-        # Create the fade-out animation on the splash screen's windowOpacity property
-        try:
-            anim = QPropertyAnimation(splash, b"windowOpacity", splash)
-            anim.setDuration(700)  # Duration in milliseconds
-            anim.setStartValue(1.0)
-            anim.setEndValue(0.0)
-            anim.setEasingCurve(QEasingCurve.InOutQuad)
-            # Store a reference to the animation to ensure it isn't garbage-collected
-            splash.anim = anim
-        except Exception as e:
-            print(f"[ERROR] start_transition: Failed to create animation: {e}")
-            mainWindow.show()
-            splash.finish(mainWindow)
-            return
 
-        def on_anim_finished():
-            try:
-                mainWindow.show()
-                splash.finish(mainWindow)
-            except Exception as e:
-                print(f"[ERROR] on_anim_finished: Error during finish: {e}")
-                QApplication.instance().quit()
+        # Set main window opacity to 0 (invisible) and show it immediately
+        mainWindow.setWindowOpacity(0.0)
+        mainWindow.show()  # Now the main window is present but transparent
 
-        anim.finished.connect(on_anim_finished)
-        anim.start(QPropertyAnimation.DeleteWhenStopped)
+        # Create fade-out animation for the splash screen
+        splash_anim = QPropertyAnimation(splash, b"windowOpacity", splash)
+        splash_anim.setDuration(700)  # Duration in milliseconds
+        splash_anim.setStartValue(1.0)
+        splash_anim.setEndValue(0.0)
+        splash_anim.setEasingCurve(QEasingCurve.InOutQuad)
+        # Once splash fade-out is done, close it
+        splash_anim.finished.connect(lambda: splash.close())
+
+        # Create fade-in animation for the main window
+        fade_in = QPropertyAnimation(mainWindow, b"windowOpacity", mainWindow)
+        fade_in.setDuration(700)
+        fade_in.setStartValue(0.0)
+        fade_in.setEndValue(1.0)
+        fade_in.setEasingCurve(QEasingCurve.InOutQuad)
+
+        # Start both animations concurrently
+        splash_anim.start(QPropertyAnimation.DeleteWhenStopped)
+        fade_in.start(QPropertyAnimation.DeleteWhenStopped)
 
     QTimer.singleShot(0, start_transition)
+
+
 
 def onEngineError(error_msg, app, splash):
     """Handle MATLAB engine loading error."""
