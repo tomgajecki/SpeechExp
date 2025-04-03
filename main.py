@@ -1,9 +1,10 @@
 import sys
+import os
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QLineEdit, QLabel, 
                             QPushButton, QComboBox, QGridLayout, QVBoxLayout, QSpacerItem, 
                             QSizePolicy, QMessageBox, QSplashScreen, QFileDialog, QProgressBar)
-from PyQt5.QtGui import QFont, QPixmap
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtGui import QFont, QPixmap, QMovie, QColor
+from PyQt5.QtCore import Qt, QTimer, QSize, QPropertyAnimation, QRect, QEasingCurve
 
 from core.matlab_engine import MatlabEngineLoader
 from core.base_window import BaseWindow
@@ -394,31 +395,191 @@ class MainWindow(BaseWindow):
         """)
 
 def main():
+    """Main function to start the application."""
     app = QApplication(sys.argv)
     
-    # Create splash screen
+    # Initialize QSplashScreen
     splash_pix = QPixmap(640, 480)
-    splash_pix.fill(Qt.black)
+    pastel_blue = QColor("#A7C7E7") 
+    splash_pix.fill(pastel_blue)
     splash = QSplashScreen(splash_pix)
-    splash.setStyleSheet("color: white; font-size: 16px;")
-    splash.showMessage("Loading MATLAB Engine...", Qt.AlignCenter | Qt.AlignBottom, Qt.white)
+    splash.setWindowFlags(splash.windowFlags() | Qt.WindowStaysOnTopHint)
+    
+    # Center the text with larger font
+    splash.setStyleSheet("color: black; font-size: 18px; font-weight: bold;")
+    
+    # Don't show the message yet - we'll position it relative to the GIF later
+    
+    # --- Add APG Logo to the right ---
+    # Determine script directory explicitly before using it
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    try:
+        # Construct the path to the APG image
+        apg_image_path = os.path.join(script_dir, "assets", "apg.png")
+        
+        if os.path.exists(apg_image_path):
+            apg_pixmap = QPixmap(apg_image_path)
+            if not apg_pixmap.isNull():
+                
+                # Scale to 30% of original size
+                scale_factor = 0.3
+                original_width = apg_pixmap.width()
+                original_height = apg_pixmap.height()
+                img_width = int(original_width * scale_factor)
+                img_height = int(original_height * scale_factor)
+                
+                # Actually resize the pixmap
+                scaled_pixmap = apg_pixmap.scaled(img_width, img_height, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                
+                # Create and position the label
+                apg_label = QLabel(splash)
+                apg_label.setPixmap(scaled_pixmap)
+                
+                # Position in the top right, with a margin
+                margin = 20 
+                splash_width = splash_pix.width()
+                
+                # Calculate position (top right corner)
+                x_pos = splash_width - scaled_pixmap.width() - margin
+                y_pos = margin  # Top margin
+                
+                apg_label.setGeometry(x_pos, y_pos, scaled_pixmap.width(), scaled_pixmap.height())
+                apg_label.show()
+            else:
+                print(f"[WARN] APG logo file found but QPixmap is null: {apg_image_path}")
+        else:
+            # Fallback: Try looking directly in the current directory
+            apg_image_path = os.path.join(script_dir, "apg.png")
+            print(f"[DEBUG] Trying alternate path: {apg_image_path}")
+            if os.path.exists(apg_image_path):
+                print(f"[DEBUG] Found APG logo in alternate location: {apg_image_path}")
+                # Now try to load from this alternate path
+                apg_pixmap = QPixmap(apg_image_path)
+                if not apg_pixmap.isNull():
+                    print(f"[DEBUG] APG logo loaded from alternate path")
+                    # Rest of the code to display the logo (same as above)
+                    # ...
+                else:
+                    print(f"[WARN] APG logo file found at alternate path but QPixmap is null")
+            else:
+                print(f"[WARN] APG logo file not found at alternate path either")
+    except Exception as e:
+        print(f"[ERROR] Could not load or place APG logo: {e}")
+        import traceback
+        traceback.print_exc()
+    # --- End Add APG Logo ---
+    
+    # Create a label for the animated GIF (loading indicator)
+    animation_label = QLabel(splash)
+    animation_label.setAttribute(Qt.WA_TranslucentBackground)  # Transparent background for label
+    
+    # Load the GIF from the assets folder
+    gif_path = os.path.join(script_dir, "assets", "loading.gif")
+    
+    
+    if not os.path.exists(gif_path):
+        print(f"Error: GIF file not found at {gif_path}")
+        # Show message centered if no GIF
+        splash.showMessage("Loading...", Qt.AlignCenter, Qt.black)
+    else:
+        try:
+            movie = QMovie(gif_path)
+            if not movie.isValid():
+                print(f"Error: QMovie could not validate the GIF file: {gif_path}")
+                print(f"Supported formats: {QMovie.supportedFormats()}")
+                # Show message centered if GIF invalid
+                splash.showMessage("Loading...", Qt.AlignCenter, Qt.black)
+            else:
+                animation_label.setMovie(movie)
+                movie.start()  # Start movie to obtain frame size
+                original_size = movie.frameRect().size()
+                
+                if original_size.width() > 0 and original_size.height() > 0:
+                    # Scale down the GIF (adjust scale_factor as desired)
+                    scale_factor = 0.5 
+                    new_width = max(1, int(original_size.width() * scale_factor))
+                    new_height = max(1, int(original_size.height() * scale_factor))
+                    movie.setScaledSize(QSize(new_width, new_height))
+                    splash_width = splash_pix.width()
+                    splash_height = splash_pix.height()
+                    
+                    # Center the GIF exactly
+                    x = (splash_width - new_width) // 2
+                    y = (splash_height - new_height) // 2 - 30  # Move up to make room for text
+                    animation_label.setGeometry(x, y, new_width, new_height)
+                    
+                    # Position text below the GIF
+                    text_y_pos = y + new_height + 10  # 10px gap between GIF and text
+                    
+                    # Create a custom text label for more precise positioning if needed
+                    loading_text = QLabel("Loading...", splash)
+                    loading_text.setStyleSheet("color: black; font-size: 18px; font-weight: bold; background: transparent;")
+                    loading_text.setAlignment(Qt.AlignCenter)
+                    text_width = 100  # Approximate width
+                    text_x = (splash_width - text_width) // 2
+                    loading_text.setGeometry(text_x, text_y_pos, text_width, 30)
+                    loading_text.show()
+                else:
+                    print("Error: Original GIF size reported as 0x0 or invalid after starting.")
+                    # Show message centered if GIF size is invalid
+                    splash.showMessage("Loading...", Qt.AlignCenter, Qt.black)
+                animation_label.show()
+        except Exception as e:
+            print(f"An unexpected error occurred while loading the GIF: {e}")
+            # Show message centered if exception
+            splash.showMessage("Loading...", Qt.AlignCenter, Qt.black)
+    
     splash.show()
     app.processEvents()
     
-    # Start loading MATLAB engine
     loader = MatlabEngineLoader()
-    loader.engine_ready.connect(lambda engine: onEngineLoaded(engine, splash))
+    loader.engine_ready.connect(lambda engine: onEngineLoaded_animated(engine, splash))
     loader.error_occurred.connect(lambda msg: onEngineError(msg, app, splash))
     loader.start()
     
     sys.exit(app.exec_())
 
-def onEngineLoaded(engine, splash):
-    """Handle MATLAB engine loaded."""
-    global mainWindow
-    mainWindow = MainWindow(engine)
-    mainWindow.show()
-    splash.finish(mainWindow)
+def onEngineLoaded_animated(engine, splash):
+    """Handle MATLAB engine loaded with a fade-out animation for the splash screen."""
+
+
+    def start_transition():
+        # Create the main window (keep it hidden until the animation is done)
+        global mainWindow
+        try:
+            mainWindow = MainWindow(engine)
+        except Exception as e:
+            onEngineError(f"Failed to create MainWindow: {e}", QApplication.instance(), splash)
+            return
+        
+        # Create the fade-out animation on the splash screen's windowOpacity property
+        try:
+            anim = QPropertyAnimation(splash, b"windowOpacity", splash)
+            anim.setDuration(700)  # Duration in milliseconds
+            anim.setStartValue(1.0)
+            anim.setEndValue(0.0)
+            anim.setEasingCurve(QEasingCurve.InOutQuad)
+            # Store a reference to the animation to ensure it isn't garbage-collected
+            splash.anim = anim
+        except Exception as e:
+            print(f"[ERROR] start_transition: Failed to create animation: {e}")
+            mainWindow.show()
+            splash.finish(mainWindow)
+            return
+
+        def on_anim_finished():
+            try:
+                mainWindow.show()
+                splash.finish(mainWindow)
+            except Exception as e:
+                print(f"[ERROR] on_anim_finished: Error during finish: {e}")
+                QApplication.instance().quit()
+
+        anim.finished.connect(on_anim_finished)
+        anim.start(QPropertyAnimation.DeleteWhenStopped)
+
+    QTimer.singleShot(0, start_transition)
 
 def onEngineError(error_msg, app, splash):
     """Handle MATLAB engine loading error."""
@@ -427,4 +588,4 @@ def onEngineError(error_msg, app, splash):
     app.quit()
 
 if __name__ == '__main__':
-    main() 
+    main()
