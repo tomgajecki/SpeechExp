@@ -1,4 +1,4 @@
-function p = call_map(name, surname, side, mapNumber)
+function p = call_map(name, surname, mapNumber)
     d = Gen_recipient(surname, name);
     p = Get_MAP_details(d, mapNumber).map;
     p = ACE_map(p);

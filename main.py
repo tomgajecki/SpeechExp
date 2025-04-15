@@ -8,12 +8,15 @@ from PyQt5.QtWidgets import (
     QSpacerItem, QSizePolicy, QMessageBox, QSplashScreen, QFileDialog, QProgressBar, QPushButton, QGraphicsDropShadowEffect
 )
 
+import matlab
+
 # Import your existing modules (these are assumed to exist as in your original code)
 from core.matlab_engine import MatlabEngineLoader
 from core.base_window import BaseWindow
 from hsm.hsm_window import HSMTestWindow
 from olsa.olsa_window import OLSATestWindow
 
+import torchaudio
 
 from PyQt5.QtCore import QPropertyAnimation, QEasingCurve
 from PyQt5.QtGui import QColor
@@ -23,23 +26,45 @@ class CoolPushButton(QPushButton):
     """A QPushButton subclass that adds a smoothly animated drop-shadow effect on hover."""
     def __init__(self, text, parent=None):
         super().__init__(text, parent)
+        
+        # Apply a custom stylesheet for a modern look.
+        self.setStyleSheet("""
+        CoolPushButton {
+            border: none;
+            background-color: #0078D7;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        CoolPushButton:hover {
+            background-color: #005EA2;
+        }
+        CoolPushButton:pressed {
+            background-color: #004371;
+        }
+        """)
+        # Change the cursor to a pointer to indicate a clickable button.
+        self.setCursor(Qt.PointingHandCursor)
+        
         # Create and attach the shadow effect with an initial blur radius of 0.
         self._shadow = QGraphicsDropShadowEffect(self)
         self._shadow.setBlurRadius(0)
         self._shadow.setOffset(0, 0)
-        self._shadow.setColor(QColor(255, 255, 255, 80))
+        # Use a subtle dark shadow for a more professional effect.
+        self._shadow.setColor(QColor(0, 0, 0, 120))
         self.setGraphicsEffect(self._shadow)
         
         # Setup the property animation for the blurRadius property.
         self._animation = QPropertyAnimation(self._shadow, b"blurRadius", self)
-        self._animation.setDuration(150)  # Duration in milliseconds; adjust as desired.
+        self._animation.setDuration(150)  # Duration in milliseconds.
         self._animation.setEasingCurve(QEasingCurve.InOutCubic)
     
     def enterEvent(self, event):
-        # Animate to a blur radius of 20 when the mouse enters.
+        # Animate to a blur radius of 15 when the mouse enters.
         self._animation.stop()
         self._animation.setStartValue(self._shadow.blurRadius())
-        self._animation.setEndValue(20)
+        self._animation.setEndValue(15)
         self._animation.start()
         super().enterEvent(event)
     
@@ -50,7 +75,6 @@ class CoolPushButton(QPushButton):
         self._animation.setEndValue(0)
         self._animation.start()
         super().leaveEvent(event)
-
 
 
 class CustomSplashScreen(QSplashScreen):
@@ -386,7 +410,7 @@ class MainWindow(BaseWindow):
             self.statusLabel.setText("Loading CI Map...")
             self.loadMapButton.setEnabled(False)
 
-            self.map_data = self.eng.call_map(name, surname, side, mapNumber, nargout=1)
+            self.map_data = self.eng.call_map(name, surname, mapNumber, nargout=1)
             lower_levels = self.map_data["lower_levels"]
             upper_levels = self.map_data["upper_levels"]
             channel_stim_rate = self.map_data["channel_stim_rate"]
@@ -569,11 +593,20 @@ class MainWindow(BaseWindow):
             return
 
         try:
-            QMessageBox.information(
-                self,
-                "Test Sentence",
-                "Playing test sentence with current calibration settings.",
-            )
+
+            speech_tensor, fs_speech = torchaudio.load('hsm/audio/speech/HSM_576_SNR=10_CCITT_clean.wav')
+            
+            # Convert to numpy array
+            speech_data = speech_tensor.numpy()
+            
+            # Check for stereo files and convert to mono if needed
+            if len(speech_data.shape) > 1 and speech_data.shape[0] > 1:
+                speech_data = speech_data[0, :]  # Take first channel
+                
+            # Convert to MATLAB-compatible numeric array
+            
+            speech_data_matlab = matlab.double(speech_data.tolist())
+            self.eng.stream(self.map_data, speech_data_matlab, nargout=0)
             # Insert actual call to MATLAB function here
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error playing test sentence: {e}")

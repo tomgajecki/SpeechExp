@@ -5,7 +5,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, pyqtSignal, QTimer
 import os
 import torchaudio
-            
+import matlab
 
 class HSMTestWindow(QMainWindow):
     """HSM test window."""
@@ -733,7 +733,7 @@ class HSMTestWindow(QMainWindow):
                 speech_data = speech_data[0, :]  # Take first channel
                 
             # Convert to MATLAB-compatible numeric array
-            import matlab
+            
             speech_data_matlab = matlab.double(speech_data.tolist())
             
             if with_noise:
