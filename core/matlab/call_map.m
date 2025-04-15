@@ -1,8 +1,8 @@
-function p = call_map(varargin)
-    p = ACE_map();
-    p.num_selected = 8;
-    p.base_level = 0.0156;
-    p.sat_level = 0.5859;
-    p.implant_stim_rate_Hz = 8000;
+function p = call_map(name, surname, side, mapNumber)
+    d = Gen_recipient(surname, name);
+    p = Get_MAP_details(d, mapNumber).map;
+    p = ACE_map(p);
+    p.upper_levels = p.comfort_levels;
+    p.lower_levels = p.threshold_levels;
     p.processes([2, 3]) = [];
 end

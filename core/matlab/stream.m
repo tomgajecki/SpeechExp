@@ -17,18 +17,23 @@ function stream(p, x)
         q = Process(p, x);
     else
         % x is LGF data
-        q = Process_from_lgf(p, x');
+        [~, frames] = size(x);
+        originalTime = linspace(0, 1, frames);  % Normalized time from 0 to 1
+        newTime = linspace(0, 1, p.channel_stim_rate*frames/1000);
+        x = interp1(originalTime, x', newTime, 'makima')';  
+        x_filtered = x(1:p.num_bands, :);
+        q = Process_from_lgf(p, x_filtered);
     end
     
     % Get NIC properties
-    jp = NIC_properties(p);
+    %jp = NIC_properties(p);
     
     % Create and start NIC streamer
-    s = NIC_streamer(jp);
-    s.start();
-    s.stream(q);
-    s.wait();
-    s.stop();
+    %s = NIC_streamer(jp);
+    %s.start();
+    %s.stream(q);
+    %s.wait();
+    %s.stop();
     
     % Optional: Plot the sequence
     % Plot_sequence(q);

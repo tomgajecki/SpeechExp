@@ -272,9 +272,11 @@ def run_inference(waveform, model_path=None, config_path=None, model_type=None, 
             raise
         
         # Load model weights
-        checkpoint = torch.load(model_path, map_location=device)
+        checkpoint = torch.load(model_path, map_location=device, weights_only=False)
         if 'state_dict' in checkpoint:
             model.load_state_dict(checkpoint['state_dict'])
+        elif'generator_state_dict' in checkpoint:
+            model.load_state_dict(checkpoint['generator_state_dict'])
         else:
             model.load_state_dict(checkpoint)
         

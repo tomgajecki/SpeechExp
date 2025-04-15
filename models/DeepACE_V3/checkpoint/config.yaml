@@ -1,0 +1,60 @@
+# Directory paths for datasets
+# Specify the relative paths to the directories containing the dataset files.
+train_mixture_dir: "../../../data/train/mixture/"  
+train_target_dir: "../../../data/train/targetLGF/" 
+valid_mixture_dir: "../../../data/valid/mixture/" 
+valid_target_dir: "../../../data/valid/targetLGF/"
+test_dir: ../../../data/test/noisy_audio/
+
+
+# Training parameters
+# Core parameters governing the training process.
+batch_size: 4                 # Number of audio samples processed in each batch
+sample_rate: 16000            # Sampling rate of the audio in Hz
+segment_length: 4.0           # Duration (in seconds) of each audio segment during training
+gen_learning_rate: 1e-3       # Learning rate for the generator
+dis_learning_rate: 2e-4       # Learning rate for the discriminator
+num_epochs: 250               # Total number of epochs for training
+warmup_start: 20              # Number of epochs before increasing adversarial and feature loss weights
+warmup_epochs: 20             # Number of epochs for warming up to increase adversarial and feature loss weights
+num_workers: 4                # Number of parallel workers for data loading
+stim_rate: 1000               # Cochlear implant stimulation rate in Hz
+base_level: 0.015625          # Cochlear implant base level for audio scaling
+
+gen_iterations: 1             # Number of generator updates per discriminator update
+early_stop_patience: 5        # Patience (in epochs) for early stopping based on validation metrics
+gen_reduce_lr_patience: 3     # Patience for reducing the generator's learning rate when validation stagnates
+dis_reduce_lr_patience: 3    # Patience for reducing the discriminator's learning rate when validation stagnates
+
+# DeepACE model configuration
+# Architecture parameters for the DeepACE model.
+DeepACE:
+  N: 64                        # Number of filters in the convolutional encoder
+  L: 32                        # Filter length for the encoder
+  P: 128                       # Number of channels in the bottleneck layer
+  B: 64                        # Channels in intermediate layers of the separation network
+  S: 32                        # Channels in the skip connections
+  H: 128                       # Number of hidden units in the separation network
+  X: 2                         # Number of convolutional blocks per stack
+  R: 2                         # Number of stacks of convolutional blocks
+  M: 22                        # Number of output channels in the mask estimation layer
+  msk_activate: "sigmoid"      # Activation function for the mask output
+  causal: True                 # Whether the model operates in causal mode
+
+# Discriminator configuration
+# Architecture parameters for the discriminator.
+Discriminator:
+  input_size: 22               # Input size matching DeepACE output channels
+  hidden_size: 32               # Size of the hidden layer in the LSTM
+  num_layers: 3                # Number of layers
+  dropout: 0.3                 # Dropout rate for regularization
+  num_scales: 3                # Number of scales for multi-resolution analysis
+  downsampling_factor: 2       # Downsampling factor between scales
+
+# Training loss weights
+# Weights for different components of the loss function.
+LossWeights:
+  include_feature_matching: True  # Whether to include feature matching loss
+  lambda_feat: 0.05               # Weight for feature matching loss
+  lambda_adv: 0.1                 # Weight for adversarial loss
+  lambda_rec: 100.0                 # Weight for reconstruction loss
