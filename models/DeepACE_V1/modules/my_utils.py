@@ -69,7 +69,7 @@ def normalize_tensor_min_max(tensor):
 
 # Function to scan the 'models/' directory for available models
 def find_trained_models():
-    model_dirs = glob.glob('../../../results/DeepACE_V1/run_*')
+    model_dirs = glob.glob('../../../results/DeepACE_V1_old/run_*')
     if not model_dirs:
         raise FileNotFoundError("No trained models found.")
     

@@ -2,10 +2,11 @@ import os
 import sys
 import traceback
 from PyQt5.QtCore import Qt, QTimer, QSize, QPropertyAnimation, QRect, QEasingCurve
-from PyQt5.QtGui import QFont, QPixmap, QMovie, QColor, QPainter, QLinearGradient
+from PyQt5.QtGui import QFont, QPixmap, QMovie, QColor, QPainter, QLinearGradient, QPen, QIcon
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLineEdit, QLabel, QComboBox, QGridLayout, QVBoxLayout, QHBoxLayout,
-    QSpacerItem, QSizePolicy, QMessageBox, QSplashScreen, QFileDialog, QProgressBar, QPushButton, QGraphicsDropShadowEffect
+    QSpacerItem, QSizePolicy, QMessageBox, QSplashScreen, QFileDialog, QProgressBar, QPushButton, QGraphicsDropShadowEffect,
+    QFrame, QTextEdit, QGroupBox, QCheckBox
 )
 
 import matlab
@@ -13,6 +14,7 @@ import matlab
 # Import your existing modules (these are assumed to exist as in your original code)
 from core.matlab_engine import MatlabEngineLoader
 from core.base_window import BaseWindow
+from core.ui_components import CustomMessageBox
 from hsm.hsm_window import HSMTestWindow
 from olsa.olsa_window import OLSATestWindow
 
@@ -83,6 +85,145 @@ class CustomSplashScreen(QSplashScreen):
         event.ignore()
 
 
+class ElectrodeVisualizer(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setMinimumHeight(300)  # Increased height for better spacing
+        self.t_levels = []
+        self.c_levels = []
+        self.stim_rate = 0
+        self.electrodes_available = []
+        self.setStyleSheet("background-color: #1a1a1a; border-radius: 5px;")
+        
+    def update_levels(self, t_levels, c_levels, electrodes_available=None, stim_rate=None):
+        self.t_levels = t_levels
+        self.c_levels = c_levels
+        if electrodes_available is not None:
+            try:
+                # Handle MATLAB array properly
+                if hasattr(electrodes_available, '_data'):  # If it's a MATLAB array
+                    self.electrodes_available = [int(x) for x in electrodes_available._data]
+                else:  # If it's already a list or other format
+                    raw_str = str(electrodes_available).replace("[", "").replace("]", "")
+                    self.electrodes_available = [int(float(x)) for x in raw_str.split() if x.strip()]
+            except Exception as e:
+                print(f"Error converting electrodes_available: {e}")
+                self.electrodes_available = []
+        if stim_rate is not None:
+            self.stim_rate = stim_rate
+        self.update()
+        
+    def paintEvent(self, event):
+        if not self.t_levels or not self.c_levels:
+            return
+            
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        
+        # Setup fonts
+        number_font = QFont("Arial", 9)
+        value_font = QFont("Arial", 9)
+        
+        # Calculate dimensions
+        width = self.width()
+        height = self.height()
+        top_margin = 35  # Space for legend
+        bottom_margin = 50  # Increased space for electrode numbers
+        left_margin = 50  # Increased space for scale numbers
+        right_margin = 10
+        
+        bar_height = height - top_margin - bottom_margin
+        usable_width = width - left_margin - right_margin
+        electrode_width = usable_width / len(self.t_levels)
+        bar_width = max(12, int(electrode_width * 0.7))  # Slightly wider bars
+        
+        # Draw legend with stim rate
+        legend_y = 10
+        painter.setFont(value_font)
+        painter.setPen(QPen(QColor("#ffffff")))
+        
+        # T-Level legend
+        painter.fillRect(left_margin, legend_y, 15, 10, QColor("#2196F3"))
+        painter.drawText(left_margin + 20, legend_y + 10, "T-Levels")
+        
+        # C-Level legend
+        painter.fillRect(left_margin + 120, legend_y, 15, 10, QColor("#FF9800"))
+        painter.drawText(left_margin + 140, legend_y + 10, "C-Levels")
+        
+        # Stim rate on the right
+        painter.setPen(QPen(QColor("#4CAF50")))
+        stim_text = f"Stim Rate: {self.stim_rate:.0f} Hz"
+        painter.drawText(width - 150, legend_y + 10, stim_text)
+        
+        # Draw scale on the left (steps of 50)
+        painter.setFont(value_font)
+        painter.setPen(QPen(QColor("#666666")))
+        for i in range(6):  # 0 to 250 in steps of 50
+            y = top_margin + (bar_height * i // 5)
+            level = 250 - (i * 50)  # Scale: 250, 200, 150, 100, 50, 0
+            
+            # Draw subtle horizontal grid line
+            painter.drawLine(left_margin, y, width - right_margin, y)
+            
+            # Draw scale number with more space from grid
+            painter.drawText(2, y - 5, left_margin - 8, 10, Qt.AlignRight | Qt.AlignVCenter, str(level))
+        
+        # Draw electrode bars and numbers
+        painter.setFont(number_font)
+        for i in range(len(self.t_levels)):
+            x = int(left_margin + i * electrode_width + (electrode_width - bar_width) / 2)
+            
+            # Draw T-Level bar (blue)
+            t_height = int((self.t_levels[i] / 255) * bar_height)
+            t_y = height - bottom_margin - t_height
+            painter.fillRect(x, t_y, bar_width, t_height, QColor("#2196F3"))
+            
+            # Draw T-Level value inside the blue bar in white
+            t_text = f"{self.t_levels[i]:.0f}"
+            t_text_rect = QRect(x, t_y + t_height//2 - 10, bar_width, 20)
+            painter.setPen(QPen(QColor("#ffffff")))  # White text
+            painter.drawText(t_text_rect, Qt.AlignCenter, t_text)
+            
+            # Draw C-Level marker (orange)
+            c_height = int((self.c_levels[i] / 255) * bar_height)
+            c_y = height - bottom_margin - c_height
+            painter.fillRect(x, c_y - 2, bar_width, 4, QColor("#FF9800"))
+            
+            # Draw C-Level value above the marker
+            c_text = f"{self.c_levels[i]:.0f}"
+            c_text_rect = QRect(x, c_y - 20, bar_width, 20)
+            painter.setPen(QPen(QColor("#FF9800")))
+            painter.drawText(c_text_rect, Qt.AlignCenter, c_text)
+            
+            # Draw electrode number with more space from bottom
+            number_rect = QRect(x, height - 35, bar_width, 20)  # Moved up from bottom
+            painter.setPen(QPen(QColor("#888888")))
+            # Use available electrode number if present, otherwise use index + 1
+            electrode_number = str(self.electrodes_available[i]) if self.electrodes_available else str(i + 1)
+            painter.drawText(number_rect, Qt.AlignCenter, electrode_number)
+
+class ParameterSection(QGroupBox):
+    def __init__(self, title, parent=None):
+        super().__init__(title, parent)
+        self.setStyleSheet("""
+            QGroupBox {
+                background-color: #2a2a2a;
+                border: 1px solid #3a3a3a;
+                border-radius: 5px;
+                margin-top: 1em;
+                padding: 5px;
+                color: #ececec;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 3px;
+            }
+        """)
+        self.layout = QVBoxLayout(self)
+        self.layout.setSpacing(10)
+
+
 class MainWindow(BaseWindow):
     """Main window for the Speech Intelligibility Experiment."""
     CALIBRATION_STEP = 2  # Calibration step percentage
@@ -97,6 +238,12 @@ class MainWindow(BaseWindow):
         self.original_upper_levels_numeric = None  # Numeric list version
         self.calibrated_upper_levels_numeric = None  # Calibrated numeric list
         self.calibration_percent = 80
+        
+        # Set window icon
+        icon_path = os.path.join(os.path.dirname(__file__), 'assets', 'icon.ico')
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
+        
         self.initUI()
         self.hide()  # Do not show immediately
         self.setObjectName("mainWindow")
@@ -108,8 +255,36 @@ class MainWindow(BaseWindow):
         """Initialize and build the GUI elements."""
         super().initUI()
 
+        # CI Streaming Checkbox (absolute positioned)
+        self.streamingCheckbox = QCheckBox("CI Streaming")
+        self.streamingCheckbox.setToolTip("Enable/Disable CI Streaming")
+        self.streamingCheckbox.setStyleSheet("""
+            QCheckBox {
+                color: #95a5a6;
+                font-size: 11px;
+            }
+            QCheckBox::indicator {
+                width: 13px;
+                height: 13px;
+                border: 1px solid #3498db;
+                border-radius: 2px;
+            }
+            QCheckBox::indicator:checked {
+                background: #2ecc71;
+            }
+        """)
+        self.streamingCheckbox.setChecked(True)
+        self.streamingCheckbox.setParent(self)
+        self.streamingCheckbox.move(self.width() - 100, 15)
+        
+        # Ensure checkbox stays in correct position when window resizes
+        def updateCheckboxPosition():
+            self.streamingCheckbox.move(self.width() - 100, 15)
+            self.streamingCheckbox.raise_()
+        self.resizeEvent = lambda e: updateCheckboxPosition()
+
         # Title label
-        titleLabel = QLabel("Speech Intelligibility Experiment")
+        titleLabel = QLabel("HSM Speech Intelligibility Experiment")
         titleLabel.setFont(QFont("Arial", 22, QFont.Bold))
         titleLabel.setAlignment(Qt.AlignCenter)
         titleLabel.setStyleSheet("color: #ececec;")
@@ -123,32 +298,32 @@ class MainWindow(BaseWindow):
 
         subjectGrid = QGridLayout()
         subjectGrid.setSpacing(10)
+        subjectGrid.setAlignment(Qt.AlignLeft)  # Align the entire grid to the left
 
         nameLabel = QLabel("Name:")
         nameLabel.setStyleSheet("color: #ececec;")
         self.nameInput = QLineEdit("wolf-dieter")
+        self.nameInput.setFixedWidth(150)
 
         surnameLabel = QLabel("Surname:")
         surnameLabel.setStyleSheet("color: #ececec;")
         self.surnameInput = QLineEdit("Goecke")
+        self.surnameInput.setFixedWidth(150)
 
         idLabel = QLabel("ID:")
         idLabel.setStyleSheet("color: #ececec;")
         self.idInput = QLineEdit("12345")
+        self.idInput.setFixedWidth(150)
 
-        testLabel = QLabel("Select Test:")
-        testLabel.setStyleSheet("color: #ececec;")
-        self.testCombo = QComboBox()
-        self.testCombo.addItems(["HSM", "OLSA"])
 
-        subjectGrid.addWidget(nameLabel, 0, 0)
-        subjectGrid.addWidget(self.nameInput, 0, 1)
-        subjectGrid.addWidget(surnameLabel, 1, 0)
-        subjectGrid.addWidget(self.surnameInput, 1, 1)
-        subjectGrid.addWidget(idLabel, 2, 0)
-        subjectGrid.addWidget(self.idInput, 2, 1)
-        subjectGrid.addWidget(testLabel, 3, 0)
-        subjectGrid.addWidget(self.testCombo, 3, 1)
+        # Add widgets to grid with proper alignment
+        subjectGrid.addWidget(nameLabel, 0, 0, Qt.AlignLeft)
+        subjectGrid.addWidget(self.nameInput, 0, 1, Qt.AlignLeft)
+        subjectGrid.addWidget(surnameLabel, 1, 0, Qt.AlignLeft)
+        subjectGrid.addWidget(self.surnameInput, 1, 1, Qt.AlignLeft)
+        subjectGrid.addWidget(idLabel, 2, 0, Qt.AlignLeft)
+        subjectGrid.addWidget(self.idInput, 2, 1, Qt.AlignLeft)
+
         self.layout.addLayout(subjectGrid)
 
         # Separator
@@ -170,6 +345,7 @@ class MainWindow(BaseWindow):
         mapSideLabel.setStyleSheet("color: #ececec;")
         self.sideCombo = QComboBox()
         self.sideCombo.addItems(["Left", "Right"])
+        self.sideCombo.setFixedWidth(150)
 
         mapNumberLabel = QLabel("Map Number:")
         mapNumberLabel.setStyleSheet("color: #ececec;")
@@ -204,63 +380,68 @@ class MainWindow(BaseWindow):
         self.mapDataGroupLabel.setStyleSheet("color: #ececec;")
         mapDataContainer.addWidget(self.mapDataGroupLabel)
 
-        self.mapDataLayout = QGridLayout()
-        self.mapDataLayout.setVerticalSpacing(15)
-        self.mapDataLayout.setHorizontalSpacing(20)
+        # Create electrode visualizer
+        self.electrode_visualizer = ElectrodeVisualizer()
+        self.electrode_visualizer.setMinimumHeight(150)
+        mapDataContainer.addWidget(self.electrode_visualizer)
+        
+        # T-Levels Section
+        self.t_levels_section = ParameterSection("Threshold Levels (T-Levels)")
+        self.t_levels_text = QTextEdit()
+        self.t_levels_text.setReadOnly(True)
+        self.t_levels_text.setStyleSheet("""
+            QTextEdit {
+                background-color: #1a1a1a;
+                color: #2196F3;
+                border: 1px solid #3a3a3a;
+                border-radius: 3px;
+                padding: 5px;
+            }
+        """)
+        self.t_levels_text.setMaximumHeight(100)
+        self.t_levels_section.layout.addWidget(self.t_levels_text)
+        mapDataContainer.addWidget(self.t_levels_section)
+        
+        # C-Levels Section
+        self.c_levels_section = ParameterSection("Comfort Levels (C-Levels)")
+        self.c_levels_text = QTextEdit()
+        self.c_levels_text.setReadOnly(True)
+        self.c_levels_text.setStyleSheet("""
+            QTextEdit {
+                background-color: #1a1a1a;
+                color: #FF9800;
+                border: 1px solid #3a3a3a;
+                border-radius: 3px;
+                padding: 5px;
+            }
+        """)
+        self.c_levels_text.setMaximumHeight(100)
+        self.c_levels_section.layout.addWidget(self.c_levels_text)
+        mapDataContainer.addWidget(self.c_levels_section)
+        
+        # Stimulation Parameters Section
+        self.stim_params_section = ParameterSection("Stimulation Parameters")
+        self.stim_rate_text = QTextEdit()
+        self.stim_rate_text.setReadOnly(True)
+        self.stim_rate_text.setStyleSheet("""
+            QTextEdit {
+                background-color: #1a1a1a;
+                color: #4CAF50;
+                border: 1px solid #3a3a3a;
+                border-radius: 3px;
+                padding: 5px;
+            }
+        """)
+        self.stim_rate_text.setMaximumHeight(60)
+        self.stim_params_section.layout.addWidget(self.stim_rate_text)
+        mapDataContainer.addWidget(self.stim_params_section)
 
-        thresholdLabel = QLabel("Thresholds (T Levels):")
-        thresholdLabel.setStyleSheet("color: #ececec;")
-        thresholdLabel.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        thresholdLabel.setFixedWidth(220)
-
-        comfortableLabel = QLabel("Comfortable Levels (C Levels):")
-        comfortableLabel.setStyleSheet("color: #ececec;")
-        comfortableLabel.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        comfortableLabel.setFixedWidth(220)
-
-        self.lowerLevelsLabel = QLabel("Not loaded")
-        self.lowerLevelsLabel.setStyleSheet(
-            "background-color: #2a2a2a; padding: 6px 10px; border-radius: 3px; color: #ececec;"
-        )
-        self.lowerLevelsLabel.setMinimumHeight(36)
-        self.lowerLevelsLabel.setMinimumWidth(600)
-        self.lowerLevelsLabel.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-
-        self.upperLevelsLabel = QLabel("Not loaded")
-        self.upperLevelsLabel.setStyleSheet(
-            "background-color: #2a2a2a; padding: 6px 10px; border-radius: 3px; color: #ececec;"
-        )
-        self.upperLevelsLabel.setMinimumHeight(36)
-        self.upperLevelsLabel.setMinimumWidth(600)
-        self.upperLevelsLabel.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-
-        stimRateLabel = QLabel("Channel Stimulation Rate (Hz):")
-        stimRateLabel.setStyleSheet("color: #ececec;")
-        stimRateLabel.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        stimRateLabel.setFixedWidth(220)
-
-        self.channelStimRateLabel = QLabel("Not loaded")
-        self.channelStimRateLabel.setStyleSheet(
-            "background-color: #2a2a2a; padding: 6px 10px; border-radius: 3px; color: #ececec;"
-        )
-        self.channelStimRateLabel.setMinimumHeight(36)
-        self.channelStimRateLabel.setMinimumWidth(600)
-        self.channelStimRateLabel.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-
-        self.mapDataLayout.addWidget(thresholdLabel, 0, 0)
-        self.mapDataLayout.addWidget(self.lowerLevelsLabel, 0, 1, 1, 3)
-        self.mapDataLayout.addWidget(comfortableLabel, 1, 0)
-        self.mapDataLayout.addWidget(self.upperLevelsLabel, 1, 1, 1, 3)
-        self.mapDataLayout.addWidget(stimRateLabel, 2, 0)
-        self.mapDataLayout.addWidget(self.channelStimRateLabel, 2, 1, 1, 3)
-
-        mapDataContainer.addLayout(self.mapDataLayout)
         mapAndCalibrationContainer.addLayout(mapDataContainer, 4)  # Ratio 4:1 for Map Data
 
         # RIGHT SIDE: Calibration Section
         self.calibrationWidget = QWidget()
         self.calibrationWidget.setStyleSheet(
-            "background-color: #333333; border: 2px solid #ff9900; border-radius: 8px; padding: 8px;"
+            "background-color: #2c3e50; border-radius: 8px; padding: 5px;"
         )
         self.calibrationWidget.setFixedWidth(240)
 
@@ -288,7 +469,7 @@ class MainWindow(BaseWindow):
         self.calibrationPercentLabel.setFont(QFont("Arial", 14, QFont.Bold))
         self.calibrationPercentLabel.setAlignment(Qt.AlignCenter)
         self.calibrationPercentLabel.setStyleSheet(
-            "color: #ffffff; background-color: #1e1e1e; padding: 6px; border-radius: 3px;"
+            "color: #ffffff; background-color: #1e2b38; padding: 6px; border-radius: 3px;"
         )
         self.calibrationPercentLabel.setFixedWidth(70)
         controlsLayout.addWidget(self.calibrationPercentLabel)
@@ -320,22 +501,40 @@ class MainWindow(BaseWindow):
 
         # Initially hide map data and calibration controls
         self.mapDataGroupLabel.setVisible(False)
-        for i in range(self.mapDataLayout.count()):
-            item = self.mapDataLayout.itemAt(i)
-            if item.widget():
-                item.widget().setVisible(False)
+        self.electrode_visualizer.setVisible(False)
+        self.t_levels_section.setVisible(False)
+        self.c_levels_section.setVisible(False)
+        self.stim_params_section.setVisible(False)
         self.calibrationWidget.setVisible(False)
 
-        self.layout.addSpacing(20)
-        self.layout.addSpacerItem(
-            QSpacerItem(20, 20, QSizePolicy.Minimum, QSizePolicy.Expanding)
-        )
+        # Add spacing between map data and bottom buttons
+        self.layout.addSpacing(30)
 
         # Action Buttons
         btnLayout = QGridLayout()
         btnLayout.setSpacing(20)
 
-        self.startButton = CoolPushButton("Start Experiment")
+        self.startButton = QPushButton("Start Experiment")
+        self.startButton.setEnabled(False)
+        self.startButton.setStyleSheet("""
+            QPushButton {
+                background-color: #95a5a6;
+                color: white;
+                border: none;
+                padding: 10px 20px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:enabled {
+                background-color: #2ecc71;
+            }
+            QPushButton:enabled:hover {
+                background-color: #27ae60;
+            }
+            QPushButton:enabled:pressed {
+                background-color: #219a52;
+            }
+        """)
         self.helpButton = CoolPushButton("Help")
         self.exitButton = CoolPushButton("Exit")
 
@@ -349,7 +548,8 @@ class MainWindow(BaseWindow):
         self.helpButton.clicked.connect(self.showHelp)
         self.exitButton.clicked.connect(self.close)
 
-        self.startButton.setEnabled(True)
+        # Initialize button states
+        self.startButton.setEnabled(False)
         self.loadMapButton.setEnabled(True)
         self.statusLabel.setText("MATLAB engine ready")
 
@@ -386,11 +586,13 @@ class MainWindow(BaseWindow):
     def loadMap(self):
         """Load CI map data from MATLAB."""
         if not hasattr(self, "eng") or self.eng is None:
-            QMessageBox.warning(
+            msg = CustomMessageBox(
                 self,
                 "Error",
                 "MATLAB engine is not ready. Please wait for initialization.",
+                QMessageBox.Warning
             )
+            msg.exec_()
             return
 
         name = self.nameInput.text().strip()
@@ -399,11 +601,34 @@ class MainWindow(BaseWindow):
         mapNumber = self.mapNumberEdit.text()
 
         if not name or not surname:
-            QMessageBox.warning(self, "Input Error", "Please enter both name and surname.")
+            msg = CustomMessageBox(
+                self,
+                "Input Error",
+                "Please enter both name and surname.",
+                QMessageBox.Warning
+            )
+            msg.exec_()
             return
 
         if not mapNumber.isdigit():
-            QMessageBox.warning(self, "Input Error", "Map number must be numeric.")
+            msg = CustomMessageBox(
+                self,
+                "Input Error",
+                "Map number must be numeric.",
+                QMessageBox.Warning
+            )
+            msg.exec_()
+            return
+            
+        # Add validation for map number > 0
+        if int(mapNumber) <= 0:
+            msg = CustomMessageBox(
+                self,
+                "Input Error",
+                "Map number must be greater than 0.",
+                QMessageBox.Warning
+            )
+            msg.exec_()
             return
 
         try:
@@ -414,46 +639,77 @@ class MainWindow(BaseWindow):
             lower_levels = self.map_data["lower_levels"]
             upper_levels = self.map_data["upper_levels"]
             channel_stim_rate = self.map_data["channel_stim_rate"]
+            electrodes_available = self.map_data["electrodes"]
 
             # Store original upper levels and prepare numeric versions
             self.original_upper_levels = upper_levels
             self.original_upper_levels_numeric = self.extract_values_from_matlab(upper_levels)
-            self.calibrated_upper_levels_numeric = self.original_upper_levels_numeric[:]
+            
+            # Always start at 80% calibration
+            self.calibration_percent = 80
+            self.calibrated_upper_levels_numeric = [level * 0.8 for level in self.original_upper_levels_numeric]
+            
+            # Update the electrode visualizer with all data
+            t_levels = self.extract_values_from_matlab(lower_levels)
+            c_levels = self.calibrated_upper_levels_numeric  # Use calibrated levels instead of original
+            self.map_data["comfort_levels"] = c_levels
+            stim_rate = self.extract_values_from_matlab(channel_stim_rate)[0]
+            self.electrode_visualizer.update_levels(t_levels, c_levels, electrodes_available, stim_rate)
 
-            self.lowerLevelsLabel.setText(self._clean_matlab_array(lower_levels))
-            self.upperLevelsLabel.setText(self._clean_matlab_array(upper_levels))
-            self.channelStimRateLabel.setText(self._clean_matlab_array(channel_stim_rate))
-
+            # Show only the electrode visualizer
             self.mapDataGroupLabel.setVisible(True)
-            for i in range(self.mapDataLayout.count()):
-                item = self.mapDataLayout.itemAt(i)
-                if item.widget():
-                    item.widget().setVisible(True)
+            self.electrode_visualizer.setVisible(True)
+            
+            # Hide the text sections
+            self.t_levels_section.setVisible(False)
+            self.c_levels_section.setVisible(False)
+            self.stim_params_section.setVisible(False)
 
             self.setFixedSize(1300, 750)
             self.center()
 
-            self.startButton.setText("Start Experiment (Map Loaded)")
+            self.startButton.setText("Start Experiment")
             self.startButton.setStyleSheet("background-color: #28a745;")
             self.mapDataGroupLabel.setText("CI Map Data")
             self.mapDataGroupLabel.setStyleSheet("color: #28a745;")
             QApplication.processEvents()
 
             self.showCalibrationControls()
-            self.updateCalibration()
+            # Update calibration display
+            self.calibrationPercentLabel.setText("80%")
+            
+            # Update button state without changing text
+            self.startButton.setEnabled(True)
+            
         except Exception as e:
-            QMessageBox.critical(self, "MATLAB Error", str(e))
-            self.map_data = None
+            # If loading fails, ensure button is disabled
+            self.startButton.setEnabled(False)
+            QMessageBox.critical(self, "Error", str(e))
         finally:
             self.loadMapButton.setEnabled(True)
             self.statusLabel.setText("Ready")
 
+    def _format_level_data(self, level_type, data):
+        """Format level data for display with channel numbers."""
+        values = self.extract_values_from_matlab(data)
+        formatted = f"{level_type}:\n\n"
+        for i, value in enumerate(values):
+            formatted += f"Channel {i+1}: {value:.1f}\n"
+        return formatted
+
+    def _format_stim_data(self, stim_rate):
+        """Format stimulation rate data for display."""
+        rate = self.extract_values_from_matlab(stim_rate)[0]
+        return f"Channel Stimulation Rate: {rate:.1f} Hz\n"
+
     def startTest(self):
         """Start the selected test."""
+
+
         name = self.nameInput.text()
         surname = self.surnameInput.text()
         id_val = self.idInput.text()
-        test_type = self.testCombo.currentText()
+        test_type = 'HSM'
         map_number = self.mapNumberEdit.text()
         map_side = self.sideCombo.currentText()
 
@@ -465,25 +721,30 @@ class MainWindow(BaseWindow):
             msg.setInformativeText(
                 "Please load a map in the main window before starting the experiment."
             )
-            msg.setStyleSheet(
-                """
-                QMessageBox { background-color: #2c3e50; }
-                QMessageBox QLabel { color: white; font-size: 12px; padding: 10px; }
-                QPushButton { background-color: #3498db; color: white; border: none;
-                             padding: 5px 15px; border-radius: 3px; min-width: 80px; }
-                QPushButton:hover { background-color: #2980b9; }
-                """
-            )
+            msg.setStyleSheet("""
+                QMessageBox {
+                    background-color: white;
+                }
+                QMessageBox QLabel {
+                    color: black;
+                    font-size: 12px;
+                }
+                QPushButton {
+                    padding: 5px 15px;
+                }
+            """)
             msg.exec_()
             return
 
         if test_type == "HSM":
             self.test_window = HSMTestWindow(
-                self.eng, name, surname, id_val, self.map_data, map_number, map_side
+                self.eng, name, surname, id_val, self.map_data, map_number, map_side,
+                ci_streaming_enabled=self.streamingCheckbox.isChecked()
             )
         else:
             self.test_window = OLSATestWindow(
-                self.eng, name, surname, id_val, self.map_data, map_number, map_side
+                self.eng, name, surname, id_val, self.map_data, map_number, map_side,
+                ci_streaming_enabled=self.streamingCheckbox.isChecked()
             )
 
         self.test_window.window_closing.connect(self.onTestWindowClosing)
@@ -510,7 +771,17 @@ class MainWindow(BaseWindow):
             "4. Click 'Start Test' to begin\n\n"
             "For more information, please contact the administrator."
         )
-        QMessageBox.information(self, "Help", help_text)
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Information)
+        msg.setWindowTitle("Help")
+        msg.setText(help_text)
+        msg.setStyleSheet("""
+            QMessageBox QLabel {
+                color: black;
+                font-size: 12px;
+            }
+        """)
+        msg.exec_()
 
     def closeEvent(self, event):
         """Handle window close event."""
@@ -527,32 +798,38 @@ class MainWindow(BaseWindow):
         self.setStyleSheet(
             """
             QMainWindow {
-                background-color: #141414;
+                background-color: #2c3e50;
             }
             QLabel {
                 color: #ececec;
             }
+            QLineEdit {
+                background-color: #34495e;
+                color: #ececec;
+                border: 1px solid #3498db;
+                padding: 5px;
+                border-radius: 4px;
+            }
             QPushButton {
-                background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, stop:0 #ff6a00, stop:1 #ee0979);
+                background-color: #3498db;
                 color: white;
                 border: none;
                 padding: 10px 20px;
-                border-radius: 10px;
-                font-size: 16px;
+                border-radius: 4px;
                 font-weight: bold;
             }
             QPushButton:hover {
-                background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, stop:0 #ff7f24, stop:1 #ff1493);
+                background-color: #2980b9;
             }
             QPushButton:pressed {
-                background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, stop:0 #ff4500, stop:1 #c71585);
+                background-color: #2472a4;
             }
             QComboBox {
-                background-color: #282828;
+                background-color: #34495e;
                 color: #ececec;
-                border: 1px solid #444;
+                border: 1px solid #3498db;
                 padding: 5px;
-                border-radius: 8px;
+                border-radius: 4px;
                 min-width: 200px;
             }
             QComboBox::drop-down {
@@ -565,14 +842,14 @@ class MainWindow(BaseWindow):
                 height: 12px;
             }
             QProgressBar {
-                border: 1px solid #444;
-                border-radius: 8px;
+                border: 1px solid #3498db;
+                border-radius: 4px;
                 text-align: center;
-                background-color: #282828;
+                background-color: #34495e;
             }
             QProgressBar::chunk {
-                background-color: #ff6a00;
-                border-radius: 8px;
+                background-color: #2ecc71;
+                border-radius: 4px;
             }
             """
         )
@@ -589,11 +866,26 @@ class MainWindow(BaseWindow):
     def playCalibration(self):
         """Play a test sentence using current calibration settings."""
         if not self.map_data:
-            QMessageBox.warning(self, "Error", "No map data loaded. Please load a map first.")
+            msg = QMessageBox(self)
+            msg.setIcon(QMessageBox.Warning)
+            msg.setWindowTitle("Error")
+            msg.setText("No map data loaded. Please load a map first.")
+            msg.setStyleSheet("""
+                QMessageBox {
+                    background-color: white;
+                }
+                QMessageBox QLabel {
+                    color: black;
+                    font-size: 12px;
+                }
+                QPushButton {
+                    padding: 5px 15px;
+                }
+            """)
+            msg.exec_()
             return
 
         try:
-
             speech_tensor, fs_speech = torchaudio.load('hsm/audio/speech/HSM_576_SNR=10_CCITT_clean.wav')
             
             # Convert to numpy array
@@ -604,12 +896,26 @@ class MainWindow(BaseWindow):
                 speech_data = speech_data[0, :]  # Take first channel
                 
             # Convert to MATLAB-compatible numeric array
-            
             speech_data_matlab = matlab.double(speech_data.tolist())
-            self.eng.stream(self.map_data, speech_data_matlab, nargout=0)
-            # Insert actual call to MATLAB function here
+            self.eng.stream(self.map_data, speech_data_matlab, self.streamingCheckbox.isChecked(), nargout=0)
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error playing test sentence: {e}")
+            msg = QMessageBox(self)
+            msg.setIcon(QMessageBox.Critical)
+            msg.setWindowTitle("Error")
+            msg.setText(f"Error playing test sentence: {e}")
+            msg.setStyleSheet("""
+                QMessageBox {
+                    background-color: white;
+                }
+                QMessageBox QLabel {
+                    color: black;
+                    font-size: 12px;
+                }
+                QPushButton {
+                    padding: 5px 15px;
+                }
+            """)
+            msg.exec_()
 
     def increaseCalibration(self):
         """Increase calibration percentage."""
@@ -626,42 +932,59 @@ class MainWindow(BaseWindow):
         self.updateCalibration()
 
     def updateCalibration(self):
-        """Update the calibrated levels based on the calibration percentage."""
+        """Update calibration and refresh displays."""
         if not self.original_upper_levels_numeric:
-            print("No original upper levels data for calibration")
             return
+            
+        # Update calibrated levels
+        self.calibrated_upper_levels_numeric = [
+            level * (self.calibration_percent / 100)
+            for level in self.original_upper_levels_numeric
+        ]
+        
+        # Update the map_data with calibrated levels
+        self.map_data["upper_levels"] = matlab.double(self.calibrated_upper_levels_numeric)
+        self.map_data["comfort_levels"] = matlab.double(self.calibrated_upper_levels_numeric)
+        
+        # Update the electrode visualizer with new C-levels
+        t_levels = self.extract_values_from_matlab(self.map_data["lower_levels"])
+        self.electrode_visualizer.update_levels(t_levels, self.calibrated_upper_levels_numeric)
+        
+        # Update calibration percentage label
+        self.calibrationPercentLabel.setText(f"{self.calibration_percent}%")
 
-        try:
-            self.calibrationPercentLabel.setText(f"{self.calibration_percent}%")
-            calibrated_values = [
-                val * (self.calibration_percent / 100.0)
-                for val in self.original_upper_levels_numeric
-            ]
-            self.calibrated_upper_levels_numeric = calibrated_values
-            formatted_values = [f"{val:.1f}" for val in self.calibrated_upper_levels_numeric]
-            self.upperLevelsLabel.setText(", ".join(formatted_values))
-        except Exception as e:
-            print(f"Error in updateCalibration: {e}")
-            traceback.print_exc()
+    def showError(self, title, message):
+        """Show error message box."""
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Critical)
+        msg.setWindowTitle(title)
+        msg.setText(message)
+        msg.setStyleSheet("""
+            QMessageBox {
+                background-color: white;
+            }
+            QMessageBox QLabel {
+                color: black;
+                font-size: 12px;
+            }
+            QPushButton {
+                padding: 5px 15px;
+            }
+        """)
+        msg.exec_()
 
 
 def main():
     app = QApplication(sys.argv)
 
-    # Create a splash pixmap with a modern gradient background
+    # Create a splash pixmap with a solid pastel blue background
     splash_width, splash_height = 640, 480
     splash_pix = QPixmap(splash_width, splash_height)
-    splash_pix.fill(Qt.transparent)
-    painter = QPainter(splash_pix)
-    gradient = QLinearGradient(0, 0, splash_width, splash_height)
-    gradient.setColorAt(0, QColor("#1f1c2c"))
-    gradient.setColorAt(1, QColor("#928dab"))
-    painter.fillRect(0, 0, splash_width, splash_height, gradient)
-    painter.end()
-
+    splash_pix.fill(QColor("#e3f2fd"))  # Soft pastel blue
+    
     splash = CustomSplashScreen(splash_pix)
     splash.setWindowFlags(splash.windowFlags() | Qt.WindowStaysOnTopHint)
-    splash.setStyleSheet("color: white; font-size: 18px; font-weight: bold;")
+    splash.setStyleSheet("color: black; font-size: 18px; font-weight: bold;")  # Changed text color to black
 
     # Add APG Logo
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -703,7 +1026,7 @@ def main():
     # Animated GIF for loading indicator
     animation_label = QLabel(splash)
     animation_label.setAttribute(Qt.WA_TranslucentBackground)
-    gif_path = os.path.join(script_dir, "assets", "loading.gif")
+    gif_path = os.path.join(script_dir, "assets", "loading3.gif")
     if not os.path.exists(gif_path):
         print(f"Error: GIF file not found at {gif_path}")
         splash.showMessage("Loading...", Qt.AlignCenter)

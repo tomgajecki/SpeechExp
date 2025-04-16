@@ -21,6 +21,7 @@ class DeepACE(torch.nn.Module):
 
     def __init__(
         self,
+  	num_sources: 1,         
         L: int = 16,
         N: int = 512,
         P: int = 3,
@@ -77,7 +78,7 @@ class DeepACE(torch.nn.Module):
             bias=False,
         )
 
-        self.balance = ChannelRebalancer(self.out_channels)
+        self.instance_norm = torch.nn.InstanceNorm1d(self.enc_num_feats, affine=False)
 
         self.out_activation = torch.nn.Hardtanh(min_val=1e-6, max_val=1.0)
 
@@ -92,9 +93,8 @@ class DeepACE(torch.nn.Module):
         mask = self.mask_generator(feats)
         ded_out = self.ded(feats)
         masked = mask*ded_out
-        decoded = self.decoder(masked)
-        output = self.balance(decoded)  
-        output = self.out_activation(output)
+        normalized = self.instance_norm(masked)
+        output = self.out_activation(self.decoder(normalized))
 
         # Calculate the number of frames to remove from the start and end
         frames_left = self.enc_kernel_size // self.enc_stride

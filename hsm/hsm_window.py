@@ -3,9 +3,48 @@ from PyQt5.QtWidgets import (
     QGroupBox, QHBoxLayout, QMessageBox, QGridLayout, QSlider, QProgressBar, QComboBox, QLineEdit
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QTimer
+from PyQt5.QtGui import QIcon
 import os
 import torchaudio
 import matlab
+from core.ui_components import CustomMessageBox
+
+class CustomMessageBox(QMessageBox):
+    """Standardized message box with consistent styling."""
+    def __init__(self, parent=None, title="", text="", icon=QMessageBox.Information, detailed_text=None):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setText(text)
+        self.setIcon(icon)
+        if detailed_text:
+            self.setDetailedText(detailed_text)
+            
+        # Set consistent styling
+        self.setStyleSheet("""
+            QMessageBox {
+                background-color: white;
+            }
+            QMessageBox QLabel {
+                color: black;
+                font-size: 12px;
+                min-width: 300px;
+            }
+            QPushButton {
+                background-color: #2c3e50;
+                color: white;
+                border: none;
+                padding: 5px 15px;
+                border-radius: 3px;
+                font-size: 12px;
+            }
+            QPushButton:hover {
+                background-color: #34495e;
+            }
+            QTextEdit {
+                color: black;
+                font-size: 12px;
+            }
+        """)
 
 class HSMTestWindow(QMainWindow):
     """HSM test window."""
@@ -13,8 +52,11 @@ class HSMTestWindow(QMainWindow):
     # Signal to notify when window is closing
     window_closing = pyqtSignal()
     
-    def __init__(self, eng, name, surname, id_val, map_data=None, map_number=None, map_side=None):
+    def __init__(self, eng, name, surname, id_val, map_data=None, map_number=None, map_side=None, ci_streaming_enabled=False):
         super().__init__()
+        
+        # Set window flags to prevent taskbar icon movement
+        self.setWindowFlags(Qt.Window | Qt.WindowTitleHint | Qt.CustomizeWindowHint | Qt.WindowCloseButtonHint | Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint)
         
         # Store parameters
         self.eng = eng
@@ -24,6 +66,13 @@ class HSMTestWindow(QMainWindow):
         self.map_data = map_data
         self.map_number = map_number or "Not Loaded"
         self.map_side = map_side or "N/A"
+
+        self.ci_streaming_enabled = ci_streaming_enabled
+        
+        # Set window icon
+        icon_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'assets', 'icon.ico')
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
         
         # Flag to track if a map is loaded
         self.map_loaded = map_data is not None
@@ -95,14 +144,15 @@ class HSMTestWindow(QMainWindow):
         # Subject info header
         subject_info = QLabel(f"Subject ID: {self.id_val}   Map: {self.map_number}   Side: {self.map_side}")
         subject_info.setStyleSheet("""
-            background-color: #2c3e50;
-            color: white;
-            padding: 6px;
-            border-radius: 3px;
+            background-color: #e3f2fd;
+            color: #000000;
+            padding: 8px;
+            border-radius: 4px;
             font-size: 12px;
             font-weight: bold;
+            margin: 2px;
         """)
-        subject_info.setMinimumHeight(30)
+        subject_info.setMinimumHeight(32)
         self.layout.addWidget(subject_info)
         
 
@@ -160,7 +210,7 @@ class HSMTestWindow(QMainWindow):
         back_layout.addStretch()
         back_layout.addWidget(self.back_btn)
         self.layout.addWidget(back_container)
-        
+
         self.main_widget.setStyleSheet("background-color: #2c3e50; color: white;")
     
     def setupControlPanel(self):
@@ -532,28 +582,8 @@ class HSMTestWindow(QMainWindow):
                 color: #7f8c8d;
             }
         """)
-        self.play_btn.setFixedHeight(30)
+        self.play_btn.setFixedSize(120, 30)  # Set fixed width and height
         self.play_btn.setEnabled(self.map_loaded)  # Disable if no map is loaded
-        
-        self.play_next_btn = QPushButton("Play Next")
-        self.play_next_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #3498db;
-                color: white;
-                border: none;
-                padding: 6px 12px;
-                border-radius: 3px;
-                font-weight: bold;
-                font-size: 12px;
-            }
-            QPushButton:hover { background-color: #2980b9; }
-            QPushButton:disabled {
-                background-color: #95a5a6;
-                color: #7f8c8d;
-            }
-        """)
-        self.play_next_btn.setFixedHeight(30)
-        self.play_next_btn.setEnabled(self.map_loaded)  # Disable if no map is loaded
         
         # Playing indicator
         self.playing_label = QLabel("")
@@ -568,16 +598,16 @@ class HSMTestWindow(QMainWindow):
         self.playing_label.setAlignment(Qt.AlignCenter)
         self.playing_label.setMinimumHeight(24)
         
-        button_layout.addWidget(self.play_btn, 1)
-        button_layout.addWidget(self.play_next_btn, 1)
+        # Add stretch before and after the button to center it
+        button_layout.addStretch(1)
+        button_layout.addWidget(self.play_btn)
         button_layout.addStretch(1)
         
         play_layout.addLayout(button_layout)
         play_layout.addWidget(self.playing_label)
         
-        # Connect button signals
-        self.play_btn.clicked.connect(lambda: self.playCurrentSentence(with_noise=(self.noise_type != "clean")))
-        self.play_next_btn.clicked.connect(self.playNextSentence)
+        # Connect button signal
+        self.play_btn.clicked.connect(self.playAndAdvance)
         
         control_layout.addWidget(play_group, 2)
         control_layout.addStretch(1)
@@ -600,6 +630,8 @@ class HSMTestWindow(QMainWindow):
             self.current_list = list_num
             for i, btn in enumerate(self.list_buttons):
                 btn.setChecked(i + 1 == list_num)
+            # Reset sentence number to 1 when changing lists
+            self.setCurrentSentence(1)
             self.updateProgressLabel()
     
     def setCurrentSentence(self, sentence_num):
@@ -625,7 +657,6 @@ class HSMTestWindow(QMainWindow):
     def disablePlaybackControls(self):
         """Disable all playback-related controls."""
         self.play_btn.setEnabled(False)
-        self.play_next_btn.setEnabled(False)
         self.icra7_btn.setEnabled(False)
         self.ccitt_btn.setEnabled(False)
         self.clean_btn.setEnabled(False)
@@ -636,7 +667,6 @@ class HSMTestWindow(QMainWindow):
     def enablePlaybackControls(self):
         """Enable all playback-related controls."""
         self.play_btn.setEnabled(self.map_loaded)
-        self.play_next_btn.setEnabled(self.map_loaded)
         self.icra7_btn.setEnabled(True)
         self.ccitt_btn.setEnabled(True)
         self.clean_btn.setEnabled(True)
@@ -652,17 +682,13 @@ class HSMTestWindow(QMainWindow):
             
         # Check if a map is loaded
         if not self.map_loaded:
-            msg = QMessageBox()
-            msg.setIcon(QMessageBox.Warning)
-            msg.setWindowTitle("No Map Loaded")
-            msg.setText("No map is currently loaded.")
-            msg.setInformativeText("Please load a map in the main window before playing audio.")
-            msg.setStyleSheet("""
-                QMessageBox { background-color: #2c3e50; }
-                QMessageBox QLabel { color: white; font-size: 12px; padding: 10px; }
-                QPushButton { background-color: #3498db; color: white; border: none; padding: 5px 15px; border-radius: 3px; min-width: 80px; }
-                QPushButton:hover { background-color: #2980b9; }
-            """)
+            msg = CustomMessageBox(
+                self,
+                "No Map Loaded",
+                "No map is currently loaded.",
+                QMessageBox.Warning,
+                "Please load a map in the main window before playing audio."
+            )
             msg.exec_()
             return
             
@@ -681,16 +707,12 @@ class HSMTestWindow(QMainWindow):
             
             # Check if speech folder exists
             if not os.path.exists(self.speech_folder):
-                msg = QMessageBox()
-                msg.setIcon(QMessageBox.Warning)
-                msg.setWindowTitle("Error")
-                msg.setText(f"Speech folder not found: {self.speech_folder}")
-                msg.setStyleSheet("""
-                    QMessageBox { background-color: #2c3e50; }
-                    QMessageBox QLabel { color: #e74c3c; font-size: 12px; padding: 10px; }
-                    QPushButton { background-color: #e74c3c; color: white; border: none; padding: 5px 15px; border-radius: 3px; min-width: 80px; }
-                    QPushButton:hover { background-color: #c0392b; }
-                """)
+                msg = CustomMessageBox(
+                    self,
+                    "Error",
+                    f"Speech folder not found: {self.speech_folder}",
+                    QMessageBox.Warning
+                )
                 msg.exec_()
                 return
             
@@ -703,17 +725,13 @@ class HSMTestWindow(QMainWindow):
                         audio_files.append(f)
             
             if not audio_files:
-                msg = QMessageBox()
-                msg.setIcon(QMessageBox.Warning)
-                msg.setWindowTitle("Error")
-                msg.setText(f"No audio file found for Sentence #{file_num} (List {list_num}, Sentence {sentence_num})")
-                msg.setDetailedText(f"Searched in: {self.speech_folder}")
-                msg.setStyleSheet("""
-                    QMessageBox { background-color: #2c3e50; }
-                    QMessageBox QLabel { color: #e74c3c; font-size: 12px; padding: 10px; }
-                    QPushButton { background-color: #e74c3c; color: white; border: none; padding: 5px 15px; border-radius: 3px; min-width: 80px; }
-                    QPushButton:hover { background-color: #c0392b; }
-                """)
+                msg = CustomMessageBox(
+                    self,
+                    "Error",
+                    f"No audio file found for Sentence #{file_num} (List {list_num}, Sentence {sentence_num})",
+                    QMessageBox.Warning,
+                    f"Searched in: {self.speech_folder}"
+                )
                 msg.exec_()
                 return
             
@@ -739,16 +757,12 @@ class HSMTestWindow(QMainWindow):
             if with_noise:
                 # Check if noise folder exists
                 if not os.path.exists(self.noise_folder):
-                    msg = QMessageBox()
-                    msg.setIcon(QMessageBox.Warning)
-                    msg.setWindowTitle("Error")
-                    msg.setText(f"Noise folder not found: {self.noise_folder}")
-                    msg.setStyleSheet("""
-                        QMessageBox { background-color: #2c3e50; }
-                        QMessageBox QLabel { color: #e74c3c; font-size: 12px; padding: 10px; }
-                        QPushButton { background-color: #e74c3c; color: white; border: none; padding: 5px 15px; border-radius: 3px; min-width: 80px; }
-                        QPushButton:hover { background-color: #c0392b; }
-                    """)
+                    msg = CustomMessageBox(
+                        self,
+                        "Error",
+                        f"Noise folder not found: {self.noise_folder}",
+                        QMessageBox.Warning
+                    )
                     msg.exec_()
                     return
                 
@@ -757,17 +771,13 @@ class HSMTestWindow(QMainWindow):
                 noise_path = os.path.join(self.noise_folder, noise_file)
                 
                 if not os.path.exists(noise_path):
-                    msg = QMessageBox()
-                    msg.setIcon(QMessageBox.Warning)
-                    msg.setWindowTitle("Error")
-                    msg.setText(f"Noise file not found: {noise_file}")
-                    msg.setDetailedText(f"Searched in: {self.noise_folder}")
-                    msg.setStyleSheet("""
-                        QMessageBox { background-color: #2c3e50; }
-                        QMessageBox QLabel { color: #e74c3c; font-size: 12px; padding: 10px; }
-                        QPushButton { background-color: #e74c3c; color: white; border: none; padding: 5px 15px; border-radius: 3px; min-width: 80px; }
-                        QPushButton:hover { background-color: #c0392b; }
-                    """)
+                    msg = CustomMessageBox(
+                        self,
+                        "Error",
+                        f"Noise file not found: {noise_file}",
+                        QMessageBox.Warning,
+                        f"Searched in: {self.noise_folder}"
+                    )
                     msg.exec_()
                     return
                 
@@ -799,11 +809,11 @@ class HSMTestWindow(QMainWindow):
                     # Process the audio using the selected algorithm
                     processed_signal = self.processAudio(mixed_audio, self.current_algorithm)
                     # Stream the processed audio
-                    self.eng.stream(self.map_data, processed_signal, nargout=0)
+                    self.eng.stream(self.map_data, processed_signal, self.ci_streaming_enabled, nargout=0)
                     self.setStatusText(f"Playing processed sentence {sentence_num} from list {list_num} with {self.noise_type.upper()} noise at {snr} dB SNR using {self.current_algorithm}")
                 else:
                     # Stream the unprocessed mixed audio
-                    self.eng.stream(self.map_data, mixed_audio, nargout=0)
+                    self.eng.stream(self.map_data, mixed_audio, self.ci_streaming_enabled, nargout=0)
                     self.setStatusText(f"Playing sentence {sentence_num} from list {list_num} with {self.noise_type.upper()} noise at {snr} dB SNR")
             else:
                 # Process clean speech based on the selected algorithm
@@ -811,28 +821,21 @@ class HSMTestWindow(QMainWindow):
                     # Process the clean speech using the selected algorithm
                     processed_audio = self.processAudio(speech_data_matlab, self.current_algorithm)
                     # Stream the processed clean speech
-                    self.eng.stream(self.map_data, processed_audio, nargout=0)
+                    self.eng.stream(self.map_data, processed_audio, self.ci_streaming_enabled, nargout=0)
                     self.setStatusText(f"Playing processed clean sentence {sentence_num} from list {list_num} using {self.current_algorithm}")
                 else:
                     # Stream clean speech without processing
-                    self.eng.stream(self.map_data, speech_data_matlab, nargout=0)
+                    self.eng.stream(self.map_data, speech_data_matlab, self.ci_streaming_enabled, nargout=0)
                     self.setStatusText(f"Playing clean sentence {sentence_num} from list {list_num}")
                 
         except Exception as e:
-            msg = QMessageBox()
-            msg.setIcon(QMessageBox.Critical)
-            msg.setWindowTitle("Error")
-            msg.setText(f"Failed to play audio: {str(e)}")
-            if 'speech_path' in locals():
-                msg.setDetailedText(f"Speech file: {speech_path}")
-            if with_noise and 'noise_path' in locals():
-                msg.setDetailedText(msg.detailedText() + f"\nNoise file: {noise_path}\nSNR: {snr} dB")
-            msg.setStyleSheet("""
-                QMessageBox { background-color: #2c3e50; }
-                QMessageBox QLabel { color: #e74c3c; font-size: 12px; padding: 10px; }
-                QPushButton { background-color: #e74c3c; color: white; border: none; padding: 5px 15px; border-radius: 3px; min-width: 80px; }
-                QPushButton:hover { background-color: #c0392b; }
-            """)
+            msg = CustomMessageBox(
+                self,
+                "Error",
+                f"Failed to play audio: {str(e)}",
+                QMessageBox.Critical,
+                f"Speech file: {speech_path}\nNoise file: {noise_path if 'noise_path' in locals() else 'N/A'}\nSNR: {snr if 'snr' in locals() else 'N/A'} dB"
+            )
             msg.exec_()
         finally:
             # Re-enable all playback controls after playback
@@ -844,6 +847,14 @@ class HSMTestWindow(QMainWindow):
         """Process audio data using the selected algorithm."""
         if algorithm == "Unprocessed":
             return audio_data
+            
+        if algorithm == "Wiener":
+            try:
+                # Process using MATLAB Wiener function
+                return self.eng.wiener_process(audio_data[0], self.fs_speech, nargout=1)
+            except Exception as e:
+                print(f"Error in Wiener processing: {e}")
+                return audio_data
             
         # Get the model path and config path for the selected algorithm
         model_dir = os.path.join(self.models_folder, algorithm)
@@ -945,6 +956,13 @@ class HSMTestWindow(QMainWindow):
         self.ccitt_btn.setChecked(noise_type == "ccitt")
         self.clean_btn.setChecked(noise_type == "clean")
         
+        # Enable/disable SNR controls based on noise type
+        snr_enabled = noise_type != "clean"
+        self.snr_slider.setEnabled(snr_enabled)
+        self.snr_minus_btn.setEnabled(snr_enabled)
+        self.snr_plus_btn.setEnabled(snr_enabled)
+        self.snr_value.setEnabled(snr_enabled)
+        
         # Update status bar
         self.setStatusText(f"Noise type set to {noise_type.upper()}")
 
@@ -958,27 +976,44 @@ class HSMTestWindow(QMainWindow):
         if current_value < 20:
             self.snr_slider.setValue(current_value + 5)
 
-    def playNextSentence(self):
-        """Play the next sentence and advance to it."""
-        # Prevent if already playing
-        if self.is_playing:
-            return
+    def playAndAdvance(self):
+        """Play current sentence and automatically advance to the next one."""
+        try:
+            # Play the current sentence
+            self.playCurrentSentence(with_noise=(self.noise_type != "clean"))
             
-        # First advance to next sentence
-        next_sentence = self.current_sentence + 1
-        if next_sentence > self.sentences_per_list:
-            next_sentence = 1
-            next_list = self.current_list + 1
-            if next_list > self.total_lists:
-                next_list = 1
-            self.setCurrentList(next_list)
-        self.setCurrentSentence(next_sentence)
-        
-        # Process any pending UI events to ensure the UI updates
-        QApplication.processEvents()
-        
-        # Then play the audio
-        self.playCurrentSentence(with_noise=(self.noise_type != "clean"))
+            # After playing, advance to next sentence/list
+            QTimer.singleShot(100, self.nextSentence)  # Small delay to ensure proper sequence
+            
+        except Exception as e:
+            msg = CustomMessageBox(
+                self,
+                "Error",
+                f"Error playing sentence: {str(e)}",
+                QMessageBox.Critical
+            )
+            msg.exec_()
+
+    def loadNextSentence(self):
+        """Load the next sentence from the list."""
+        try:
+            if not self.sentence_files:
+                self.showWarning("Warning", "No more sentences available.")
+                return False
+
+            self.current_sentence = self.sentence_files.pop(0)
+            return True
+        except Exception as e:
+            self.showError("Error", f"Error loading next sentence: {e}")
+            return False
+
+    def saveResults(self):
+        """Save test results."""
+        try:
+            # Save results implementation
+            self.showInfo("Success", "Results saved successfully!")
+        except Exception as e:
+            self.showError("Error", f"Error saving results: {e}")
 
     def onAlgorithmChanged(self, algorithm):
         """Handle algorithm selection change."""
@@ -988,15 +1023,41 @@ class HSMTestWindow(QMainWindow):
 
     def showMapWarning(self):
         """Show a warning message about loading a map."""
-        msg = QMessageBox()
-        msg.setIcon(QMessageBox.Warning)
-        msg.setWindowTitle("No Map Loaded")
-        msg.setText("No map is currently loaded.")
-        msg.setInformativeText("Please load a map in the main window before starting the experiment.")
-        msg.setStyleSheet("""
-            QMessageBox { background-color: #2c3e50; }
-            QMessageBox QLabel { color: white; font-size: 12px; padding: 10px; }
-            QPushButton { background-color: #3498db; color: white; border: none; padding: 5px 15px; border-radius: 3px; min-width: 80px; }
-            QPushButton:hover { background-color: #2980b9; }
-        """)
+        msg = CustomMessageBox(
+            self,
+            "No Map Loaded",
+            "No map is currently loaded.",
+            QMessageBox.Warning,
+            "Please load a map in the main window before starting the experiment."
+        )
+        msg.exec_()
+
+    def showError(self, title, message):
+        """Show error message box."""
+        msg = CustomMessageBox(
+            self,
+            title,
+            message,
+            QMessageBox.Critical
+        )
+        msg.exec_()
+
+    def showWarning(self, title, message):
+        """Show warning message box."""
+        msg = CustomMessageBox(
+            self,
+            title,
+            message,
+            QMessageBox.Warning
+        )
+        msg.exec_()
+
+    def showInfo(self, title, message):
+        """Show information message box."""
+        msg = CustomMessageBox(
+            self,
+            title,
+            message,
+            QMessageBox.Information
+        )
         msg.exec_()

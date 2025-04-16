@@ -258,17 +258,11 @@ def run_inference(waveform, model_path=None, config_path=None, model_type=None, 
         
         if model_params is None:
             raise ValueError(f"No model parameters found in config for model type: {model_type}")
-        
-        # Print the model parameters for debugging
-        print(f"Model parameters: {model_params}")
-        
+
         # Initialize model
         try:
             model = model_class(**model_params).to(device)
         except TypeError as e:
-            print(f"Error initializing model: {e}")
-            print(f"Model class: {model_class}")
-            print(f"Model parameters: {model_params}")
             raise
         
         # Load model weights

@@ -1,0 +1,38 @@
+# Directory paths for training, validation, and testing datasets
+train_mixture_dir: "../../../data/train/mixture/"  
+train_target_dir: "../../../data/train/targetLGF/" 
+valid_mixture_dir: "../../../data/valid/mixture/" 
+valid_target_dir: "../../../data/valid/targetLGF/"
+test_dir: "../../../data/test/noisy_audio/"
+
+# Training parameters
+batch_size: 2             # Number of samples per batch during training
+sample_rate: 16000        # Sampling rate of the input audio (in Hz)
+segment_length: 4.0       # Length of audio segments to be used during training (in seconds)
+learning_rate: 1e-3       # Learning rate for the optimizer
+num_epochs: 100           # Number of training epochs
+num_workers: 4            # Number of workers for data loading
+stim_rate: 1000           # Cochlear implant stimulation rate
+base_level: 0.015625      # Cochlear implant base level
+
+# Loss function selection
+loss: "MSE"               # Options: "MSE", "weighted", etc.
+
+# DeepACEConformer Model configuration parameters
+DeepACE:
+  N: 64                    # Number of encoder filters (feature dimension)
+  L: 32                    # Length of the convolutional encoder filters
+  P: 128                   # Number of channels in the bottleneck layer (mask generator)
+  B: 64                    # Number of channels in the intermediate layers of the separation network
+  S: 128                    # Number of channels in the skip connections
+  H: 128                   # Number of hidden units in the separation network
+  X: 2                     # Number of convolutional blocks within each stack
+  R: 2                     # Number of stacks of convolutional blocks
+  M: 22                    # Number of output channels in the mask estimation layer
+  msk_activate: "sigmoid"  # Activation function for the mask output
+  causal: True             # Enforce causality (only past information is used)
+  # Additional parameters for the Conformer components:
+  num_conformer_blocks: 2  # Number of Conformer blocks to apply after the encoder
+  num_heads: 2             # Number of heads for the self-attention mechanism
+  ff_hidden_dim: 16      # Hidden dimension for the feed-forward modules in the Conformer
+  conv_kernel_size: 3      # Kernel size for the causal convolution within the Conformer block

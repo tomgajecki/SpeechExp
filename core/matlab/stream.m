@@ -1,4 +1,4 @@
-function stream(p, x)
+function stream(p, x, ci_streaming_enabled)
     % STREAM Process and stream audio or LGF data through the NIC
     %   STREAM(p, x) processes the input data x through the NIC with parameters p
     %   and streams the result to the audio output.
@@ -26,14 +26,16 @@ function stream(p, x)
     end
     
     % Get NIC properties
-    %jp = NIC_properties(p);
-    
-    % Create and start NIC streamer
-    %s = NIC_streamer(jp);
-    %s.start();
-    %s.stream(q);
-    %s.wait();
-    %s.stop();
+    if ci_streaming_enabled
+        jp = NIC_properties(p);
+        
+        % Create and start NIC streamer
+        s = NIC_streamer(jp);
+        s.start();
+        s.stream(q);
+        s.wait();
+        s.stop();
+    end
     
     % Optional: Plot the sequence
     % Plot_sequence(q);

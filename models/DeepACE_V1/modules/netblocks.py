@@ -223,7 +223,7 @@ class MaskGenerator(torch.nn.Module):
             kernel_size=1,
         )
 
-        self.output_conv = torch.nn.Conv1d(
+        self.output_conv_logits = torch.nn.Conv1d(
             in_channels=num_feats_bn,
             out_channels=output_dim,
             kernel_size=1,
@@ -249,7 +249,7 @@ class MaskGenerator(torch.nn.Module):
         if output.shape[1] != self.num_feats_bn:
             output = self.adjust_channels_conv(output)
 
-        output = self.output_conv(output)
+        output = self.output_conv_logits(output)
         output = self.mask_activate(output)
         return output
 

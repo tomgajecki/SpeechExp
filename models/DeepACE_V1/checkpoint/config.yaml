@@ -3,14 +3,14 @@ train_mixture_dir: "../../../../../Datasets/30hLibriVox/train/mixture/"
 train_target_dir: "../../../../../Datasets/30hLibriVox/train/targetLGF/"
 valid_mixture_dir: "../../../../../Datasets/30hLibriVox/valid/mixture/"
 valid_target_dir: "../../../../../Datasets/30hLibriVox/valid/targetLGF/"
-test_dir: "C:/Users/Tom/Documents/Projects/CI_Speech_Enhancement/data/test/clean_audio/"
+test_dir: "../../../../../Datasets/DeepACE/test/"
 
 # Training parameters
-batch_size: 4             # Number of samples per batch during training
+batch_size: 2             # Number of samples per batch during training
 sample_rate: 16000        # Sampling rate of the input audio (in Hz)
 segment_length: 4.0       # Length of audio segments to be used during training (in seconds)
 learning_rate: 1e-3       # Learning rate for the optimizer
-num_epochs: 200           # Number of training epochs
+num_epochs: 100           # Number of training epochs
 num_workers: 4            # Number of workers for data loading
 stim_rate: 1000           # Cochlear implant stimulation rate
 base_level: 0.015625      # Cochlear implant base level
@@ -25,6 +25,7 @@ delta: 1.0                # Huber delta for Huber-based losses
 
 # DeepACE Model configuration parameters
 DeepACE:
+  num_sources: 1           # Number of audio sources to separate
   N: 64                  # Number of encoder filters (feature dimension)
   L: 32                    # Length of the convolutional encoder filters
   P: 128                     # Number of channels in the bottleneck layer
