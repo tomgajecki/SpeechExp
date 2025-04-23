@@ -44,7 +44,6 @@ def get_model_class(model_type, modules_dir):
         # Add the modules directory to the Python path
         if modules_dir not in sys.path:
             sys.path.append(modules_dir)
-            print(f"Added {modules_dir} to Python path")
         
         # Get the parent directory name (e.g., DeepACEv1, DeepACEv2)
         parent_dir = os.path.basename(os.path.dirname(modules_dir))

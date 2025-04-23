@@ -2,11 +2,11 @@ import os
 import sys
 import traceback
 from PyQt5.QtCore import Qt, QTimer, QSize, QPropertyAnimation, QRect, QEasingCurve
-from PyQt5.QtGui import QFont, QPixmap, QMovie, QColor, QPainter, QLinearGradient, QPen, QIcon
+from PyQt5.QtGui import QFont, QPixmap, QMovie, QColor, QPainter, QPen, QIcon
 from PyQt5.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QLineEdit, QLabel, QComboBox, QGridLayout, QVBoxLayout, QHBoxLayout,
-    QSpacerItem, QSizePolicy, QMessageBox, QSplashScreen, QFileDialog, QProgressBar, QPushButton, QGraphicsDropShadowEffect,
-    QFrame, QTextEdit, QGroupBox, QCheckBox
+    QApplication, QWidget, QLineEdit, QLabel, QComboBox, QGridLayout, QVBoxLayout, QHBoxLayout,
+    QMessageBox, QSplashScreen, QPushButton, QGraphicsDropShadowEffect,
+    QTextEdit, QGroupBox, QCheckBox
 )
 
 import matlab
@@ -767,8 +767,7 @@ class MainWindow(BaseWindow):
             "Speech Intelligibility Experiment Help\n\n"
             "1. Enter subject information (name, surname, ID)\n"
             "2. Load CI Map data if available\n"
-            "3. Select test type (HSM or OLSA)\n"
-            "4. Click 'Start Test' to begin\n\n"
+            "3. Click 'Start Test' to begin\n\n"
             "For more information, please contact the administrator."
         )
         msg = QMessageBox(self)

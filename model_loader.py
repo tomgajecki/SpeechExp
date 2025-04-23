@@ -22,7 +22,6 @@ def load_model_class(model_dir):
     
     for module_name in modules_to_clear:
         del sys.modules[module_name]
-        print(f"Cleared cached module: {module_name}")
     
     # Get the modules directory
     modules_dir = os.path.join(model_dir, 'modules')
@@ -40,17 +39,14 @@ def load_model_class(model_dir):
     # Add the necessary paths in the correct order
     if modules_dir not in sys.path:
         sys.path.insert(0, modules_dir)
-        print(f"Added {modules_dir} to Python path")
     
     parent_dir = os.path.dirname(modules_dir)
     if parent_dir not in sys.path:
         sys.path.insert(0, parent_dir)
-        print(f"Added {parent_dir} to Python path")
     
     root_dir = os.path.dirname(parent_dir)
     if root_dir not in sys.path:
         sys.path.insert(0, root_dir)
-        print(f"Added {root_dir} to Python path")
     
     # Import the model module with a unique name based on the directory
     model_name = f"model_{os.path.basename(parent_dir).lower()}"
@@ -61,7 +57,6 @@ def load_model_class(model_dir):
     # List all classes in the module
     model_classes = [cls for name, cls in inspect.getmembers(model_module) 
                     if inspect.isclass(cls) and cls.__module__ == model_module.__name__]
-    print(f"Available classes in {model_file}: {[cls.__name__ for cls in model_classes]}")
     
     # Find the main model class
     model_class = None

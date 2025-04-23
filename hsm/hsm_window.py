@@ -616,14 +616,13 @@ class HSMTestWindow(QMainWindow):
         
     def updateProgressLabel(self):
         """Update the progress label with current list and sentence information."""
-        list_text = f'<span style="color: #3498db; font-weight: bold; font-size: 12px;">{self.current_list}</span>'
-        sentence_text = f'<span style="color: #2ecc71; font-weight: bold; font-size: 12px;">{self.current_sentence}</span>'
-        
-        # Only update the playing label if we're not currently playing
-        if not self.is_playing:
-            self.playing_label.setText(f"List {list_text} / {self.total_lists}, Sentence {sentence_text} / {self.sentences_per_list}")
-        else:
-            self.playing_label.setText("Playing...")  # Keep "Playing..." during playback
+        # Style the entire List part blue
+        list_part = f'<span style="color: #2196F3; font-weight: bold; font-size: 12px;">List {self.current_list} / {self.total_lists}</span>'
+        # Style the entire Sentence part green
+        sentence_part = f'<span style="color: #4CAF50; font-weight: bold; font-size: 12px;">Sentence {self.current_sentence} / {self.sentences_per_list}</span>'
+
+        # Combine the styled parts with a comma separator - removed "Playing..." logic
+        self.playing_label.setText(f"{list_part}, {sentence_part}")
 
     def setCurrentList(self, list_num):
         if 1 <= list_num <= self.total_lists:
@@ -675,11 +674,12 @@ class HSMTestWindow(QMainWindow):
         self.snr_plus_btn.setEnabled(True)
 
     def playCurrentSentence(self, with_noise=True):
-        """Play the current sentence with or without noise."""
+        """Initiates playback: updates GUI, then schedules streaming via timer."""
         # Prevent multiple playbacks
         if self.is_playing:
-            return
-            
+            print("Playback already in progress.")
+            return False # Indicate busy state
+
         # Check if a map is loaded
         if not self.map_loaded:
             msg = CustomMessageBox(
@@ -690,32 +690,50 @@ class HSMTestWindow(QMainWindow):
                 "Please load a map in the main window before playing audio."
             )
             msg.exec_()
-            return
-            
-        # Disable all playback controls during playback
+            return False # Indicate failure
+
+        # --- Start Playback Sequence ---
         self.is_playing = True
         self.disablePlaybackControls()
-        
-        # Show playing indicator
-        self.playing_label.setText("Playing...")
-        
+
+        # --- GUI Update First ---
+        print("Updating GUI for current sentence before scheduling stream...")
+        self.updateProgressLabel() # Show the current sentence being prepared
+        QApplication.processEvents() # Ensure GUI updates visually
+
+        # --- Schedule Streaming ---
+        # Use QTimer.singleShot to decouple streaming from the initial GUI update
+        # Pass necessary parameters (like with_noise) via lambda if needed
+        print("Scheduling streaming logic...")
+        QTimer.singleShot(0, lambda: self._execute_streaming(with_noise))
+
+        # Return immediately, _execute_streaming will handle the rest
+        return True # Indicate initiation success
+
+    def _execute_streaming(self, with_noise):
+        """Handles the actual audio loading, processing, and streaming logic."""
+        print(f"Executing streaming for List {self.current_list}, Sentence {self.current_sentence}")
+        speech_path = "N/A"
+        noise_path = "N/A"
+        snr = "N/A"
+        playback_successful = False
+        status_msg = "Playback status unknown"
+        stream_log_msg = "Stream log message not set"
+        audio_to_stream = None # Initialize
+
         try:
-            # Get current sentence info
+            # Get current sentence info (needed again here as it runs later)
             sentence_num = self.current_sentence
             list_num = self.current_list
             file_num = (list_num - 1) * self.sentences_per_list + sentence_num
-            
+
+            # --- Audio Loading --- (Moved outside conditional logic for clarity)
             # Check if speech folder exists
             if not os.path.exists(self.speech_folder):
-                msg = CustomMessageBox(
-                    self,
-                    "Error",
-                    f"Speech folder not found: {self.speech_folder}",
-                    QMessageBox.Warning
-                )
+                msg = CustomMessageBox(self, "Error", f"Speech folder not found: {self.speech_folder}", QMessageBox.Warning)
                 msg.exec_()
-                return
-            
+                raise FileNotFoundError(f"Speech folder not found: {self.speech_folder}")
+
             # Find speech audio file
             audio_files = []
             for f in os.listdir(self.speech_folder):
@@ -723,126 +741,126 @@ class HSMTestWindow(QMainWindow):
                     parts = f.split('_')
                     if len(parts) >= 2 and parts[0] == "HSM" and parts[1] == str(file_num):
                         audio_files.append(f)
-            
             if not audio_files:
-                msg = CustomMessageBox(
-                    self,
-                    "Error",
-                    f"No audio file found for Sentence #{file_num} (List {list_num}, Sentence {sentence_num})",
-                    QMessageBox.Warning,
-                    f"Searched in: {self.speech_folder}"
-                )
-                msg.exec_()
-                return
-            
-            # Get speech file path
+                 msg = CustomMessageBox(self, "Error", f"No audio file found for Sentence #{file_num} (List {list_num}, Sentence {sentence_num})", QMessageBox.Warning, f"Searched in: {self.speech_folder}")
+                 msg.exec_()
+                 raise FileNotFoundError(f"Audio file not found for sentence {file_num}")
+
             speech_file = audio_files[0]
             speech_path = os.path.join(self.speech_folder, speech_file)
-            
-            
-            # Load the speech data using torchaudio
             speech_tensor, fs_speech = torchaudio.load(speech_path)
-            
-            # Convert to numpy array
+            self.fs_speech = fs_speech
             speech_data = speech_tensor.numpy()
-            
-            # Check for stereo files and convert to mono if needed
             if len(speech_data.shape) > 1 and speech_data.shape[0] > 1:
-                speech_data = speech_data[0, :]  # Take first channel
-                
-            # Convert to MATLAB-compatible numeric array
-            
+                speech_data = speech_data[0, :]
             speech_data_matlab = matlab.double(speech_data.tolist())
-            
+
+            # --- Prepare Audio To Stream based on conditions ---
             if with_noise:
                 # Check if noise folder exists
                 if not os.path.exists(self.noise_folder):
-                    msg = CustomMessageBox(
-                        self,
-                        "Error",
-                        f"Noise folder not found: {self.noise_folder}",
-                        QMessageBox.Warning
-                    )
+                    msg = CustomMessageBox(self, "Error", f"Noise folder not found: {self.noise_folder}", QMessageBox.Warning)
                     msg.exec_()
-                    return
-                
-                # Find noise file
+                    raise FileNotFoundError(f"Noise folder not found: {self.noise_folder}")
+
                 noise_file = f"{self.noise_type}.wav"
                 noise_path = os.path.join(self.noise_folder, noise_file)
-                
                 if not os.path.exists(noise_path):
-                    msg = CustomMessageBox(
-                        self,
-                        "Error",
-                        f"Noise file not found: {noise_file}",
-                        QMessageBox.Warning,
-                        f"Searched in: {self.noise_folder}"
-                    )
-                    msg.exec_()
-                    return
-                
-                # Load noise data using torchaudio
+                     msg = CustomMessageBox(self, "Error", f"Noise file not found: {noise_file}", QMessageBox.Warning, f"Searched in: {self.noise_folder}")
+                     msg.exec_()
+                     raise FileNotFoundError(f"Noise file not found: {noise_file}")
+
                 noise_tensor, fs_noise = torchaudio.load(noise_path)
-                
-                # Convert to numpy array
-                noise_data = noise_tensor.numpy()
-                
-                # Check for stereo noise and convert to mono if needed
-                if len(noise_data.shape) > 1 and noise_data.shape[0] > 1:
-                    noise_data = noise_data[0, :]  # Take first channel
-                    
-                # Check if sampling rates match
                 if fs_speech != fs_noise:
-                    raise ValueError(f"Sampling rates do not match: Speech {fs_speech}Hz, Noise {fs_noise}Hz")
-                
-                # Convert noise to MATLAB-compatible numeric array
+                     raise ValueError(f"Sampling rates mismatch: Speech {fs_speech}Hz, Noise {fs_noise}Hz")
+                noise_data = noise_tensor.numpy()
+                if len(noise_data.shape) > 1 and noise_data.shape[0] > 1:
+                     noise_data = noise_data[0, :]
                 noise_data_matlab = matlab.double(noise_data.tolist())
-                
-                # Get SNR value
                 snr = self.snr_slider.value()
-                
-                # Use MATLAB engine to mix audio at the specified SNR
                 mixed_audio = self.eng.mix_audio(speech_data_matlab, noise_data_matlab, float(snr), float(fs_speech), nargout=1)
-                
-                # Process the mixed audio based on the selected algorithm
+                audio_to_stream = mixed_audio
+
                 if self.current_algorithm != "Unprocessed":
-                    # Process the audio using the selected algorithm
+                    print(f"Processing mixed audio with {self.current_algorithm}...")
                     processed_signal = self.processAudio(mixed_audio, self.current_algorithm)
-                    # Stream the processed audio
-                    self.eng.stream(self.map_data, processed_signal, self.ci_streaming_enabled, nargout=0)
-                    self.setStatusText(f"Playing processed sentence {sentence_num} from list {list_num} with {self.noise_type.upper()} noise at {snr} dB SNR using {self.current_algorithm}")
+                    audio_to_stream = processed_signal
+                    status_msg = f"Played processed sentence {sentence_num} list {list_num} ({self.noise_type.upper()}@{snr}dB) [{self.current_algorithm}]"
+                    stream_log_msg = f"Streaming processed mix: L{list_num} S{sentence_num}, Algo: {self.current_algorithm}, Noise: {self.noise_type.upper()}, SNR: {snr} dB"
                 else:
-                    # Stream the unprocessed mixed audio
-                    self.eng.stream(self.map_data, mixed_audio, self.ci_streaming_enabled, nargout=0)
-                    self.setStatusText(f"Playing sentence {sentence_num} from list {list_num} with {self.noise_type.upper()} noise at {snr} dB SNR")
-            else:
-                # Process clean speech based on the selected algorithm
+                    status_msg = f"Played sentence {sentence_num} list {list_num} ({self.noise_type.upper()}@{snr}dB) [Unprocessed]"
+                    stream_log_msg = f"Streaming unprocessed mix: L{list_num} S{sentence_num}, Noise: {self.noise_type.upper()}, SNR: {snr} dB"
+            else: # Clean
+                audio_to_stream = speech_data_matlab
                 if self.current_algorithm != "Unprocessed":
-                    # Process the clean speech using the selected algorithm
+                    print(f"Processing clean audio with {self.current_algorithm}...")
                     processed_audio = self.processAudio(speech_data_matlab, self.current_algorithm)
-                    # Stream the processed clean speech
-                    self.eng.stream(self.map_data, processed_audio, self.ci_streaming_enabled, nargout=0)
-                    self.setStatusText(f"Playing processed clean sentence {sentence_num} from list {list_num} using {self.current_algorithm}")
+                    audio_to_stream = processed_audio
+                    status_msg = f"Played processed clean sentence {sentence_num} list {list_num} [{self.current_algorithm}]"
+                    stream_log_msg = f"Streaming processed clean: L{list_num} S{sentence_num}, Algo: {self.current_algorithm}"
                 else:
-                    # Stream clean speech without processing
-                    self.eng.stream(self.map_data, speech_data_matlab, self.ci_streaming_enabled, nargout=0)
-                    self.setStatusText(f"Playing clean sentence {sentence_num} from list {list_num}")
-                
+                    status_msg = f"Played clean sentence {sentence_num} list {list_num} [Unprocessed]"
+                    stream_log_msg = f"Streaming clean: L{list_num} S{sentence_num}"
+
+            # Ensure audio_to_stream is assigned
+            if audio_to_stream is None:
+                 raise ValueError("audio_to_stream was not assigned. Check logic.")
+
+            # --- Streaming --- 
+            self.setStatusText(status_msg)
+            print(f"Calling eng.stream: {stream_log_msg}")
+            self.eng.stream(self.map_data, audio_to_stream, self.ci_streaming_enabled, nargout=0)
+            print("eng.stream call returned.")
+            
+
+            playback_successful = True # Mark as successful if streaming call completed without error
+
         except Exception as e:
+            import traceback
+            print("--- ERROR DURING STREAMING --- ")
+            traceback.print_exc() 
+            print("--- END ERROR --- ")
             msg = CustomMessageBox(
-                self,
-                "Error",
-                f"Failed to play audio: {str(e)}",
+                self, "Error During Playback", f"Failed to play audio: {str(e)}",
                 QMessageBox.Critical,
-                f"Speech file: {speech_path}\nNoise file: {noise_path if 'noise_path' in locals() else 'N/A'}\nSNR: {snr if 'snr' in locals() else 'N/A'} dB"
+                f"Details:\nSpeech file: {speech_path}\nNoise file: {noise_path}\nSNR: {snr} dB"
             )
             msg.exec_()
+            # Error state handled by scheduling _finalize_playback with success=False
+
         finally:
-            # Re-enable all playback controls after playback
-            self.is_playing = False
-            self.enablePlaybackControls()
-            self.playing_label.setText("")  # Clear playing indicator
-            
+            # --- Schedule Finalization --- 
+            # This always runs, whether try block succeeded or failed.
+            # Schedule the final GUI updates and state reset slightly later.
+            delay_ms = 200 # Add a small delay (e.g., 200ms)
+            print(f"Scheduling finalization step with success={playback_successful} after {delay_ms}ms delay...")
+            QTimer.singleShot(delay_ms, lambda: self._finalize_playback(playback_successful))
+            # Note: is_playing remains True until _finalize_playback runs
+
+    def _finalize_playback(self, success):
+        """Final step after streaming attempt: Re-enable controls, advance sentence if successful."""
+        print(f"Executing finalization step. Success: {success}")
+        
+        if not self.is_playing:
+             print("Finalization warning: is_playing was already false.")
+             # Might happen if user interacts rapidly or error occurs unexpectedly
+             # Still attempt to enable controls just in case.
+             self.enablePlaybackControls()
+             return # Avoid double updates
+
+        self.is_playing = False
+        self.enablePlaybackControls()
+        
+        if success:
+            print("Playback successful, advancing sentence and updating GUI...")
+            self.nextSentence() # This calls updateProgressLabel for the *next* sentence
+        else:
+            print("Playback failed or error occurred, updating GUI to reflect current selection...")
+            self.updateProgressLabel() # Ensure label reflects the current sentence after failed attempt
+        
+        QApplication.processEvents() # Force GUI update after advancing or on failure recovery
+        print("Finalization complete.")
+
     def processAudio(self, audio_data, algorithm):
         """Process audio data using the selected algorithm."""
         if algorithm == "Unprocessed":
@@ -918,8 +936,6 @@ class HSMTestWindow(QMainWindow):
                 model_type=algorithm
             )
             
-            print(f"Audio processing completed successfully")
-            
             # Convert back to MATLAB array if needed
             import matlab
             processed_audio_matlab = matlab.double(processed_audio.tolist())
@@ -940,7 +956,6 @@ class HSMTestWindow(QMainWindow):
                 break
     
     def closeEvent(self, event):
-        print("HSM test window closing")
         self.window_closing.emit()
         event.accept() 
 
@@ -977,22 +992,9 @@ class HSMTestWindow(QMainWindow):
             self.snr_slider.setValue(current_value + 5)
 
     def playAndAdvance(self):
-        """Play current sentence and automatically advance to the next one."""
-        try:
-            # Play the current sentence
-            self.playCurrentSentence(with_noise=(self.noise_type != "clean"))
-            
-            # After playing, advance to next sentence/list
-            QTimer.singleShot(100, self.nextSentence)  # Small delay to ensure proper sequence
-            
-        except Exception as e:
-            msg = CustomMessageBox(
-                self,
-                "Error",
-                f"Error playing sentence: {str(e)}",
-                QMessageBox.Critical
-            )
-            msg.exec_()
+        """Plays the current sentence, advancement is handled internally."""
+        print("Play button clicked. Initiating playback sequence...")
+        self.playCurrentSentence(with_noise=(self.noise_type != "clean"))
 
     def loadNextSentence(self):
         """Load the next sentence from the list."""
